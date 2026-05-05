@@ -51,7 +51,7 @@ def enrich_product(client: genai.Client, product_json: str) -> tuple[DetailedPro
     used_model = primary_model
     
     primary_retries = int(os.environ.get("PRIMARY_MODEL_RETRIES", "3"))
-    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60"))
+    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
     start_time = time.time()
     response = None
     
@@ -146,7 +146,7 @@ def describe_product_from_images(client: genai.Client, ref_paths: list[Path]) ->
     primary_model = os.environ.get("DESCRIBE_MODEL_PRIMARY", "gemini-3.1-pro-preview")
     fallback_model = os.environ.get("DESCRIBE_MODEL_FALLBACK", "gemini-3.1-flash-preview")
     primary_retries = int(os.environ.get("PRIMARY_MODEL_RETRIES", "3"))
-    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60"))
+    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
     start_time = time.time()
     response = None
     
@@ -233,7 +233,7 @@ def judge_product_likeness(client: genai.Client, original_paths: list[Path], gen
     contents.append(f"{prompt}\n\nProduct Description:\n{description}")
     
     model_name = os.environ.get("JUDGE_MODEL", "gemini-2.5-pro")
-    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60"))
+    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
     start_time = time.time()
     try:
         response = client.models.generate_content(
@@ -356,7 +356,7 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                 contents.append(prompt)
                 
                 model_name = os.environ.get("GENERATE_MODEL", "gemini-3-pro-image-preview")
-                timeout = int(os.environ.get("API_CALL_TIMEOUT", "60"))
+                timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
                 start_time = time.time()
                 img_response = client.models.generate_content(
                     model=model_name,
