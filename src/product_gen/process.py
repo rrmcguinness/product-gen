@@ -5,6 +5,7 @@ import shutil
 import concurrent.futures
 import time
 from functools import wraps
+import threading
 
 from google import genai
 from google.genai import types
@@ -15,6 +16,7 @@ from .model import DetailedProduct, ProductLikenessReview, ImageReview, ProductE
 from pydantic import ValidationError
 from .image_finder import ImageFinder
 from .pdp import generate_pdp_html
+from dotenv import load_dotenv
 
 
 def retry_with_backoff(max_retries=5, base_delay=2, backoff_factor=2):
@@ -145,6 +147,7 @@ def describe_product_from_images(client: genai.Client, ref_paths: list[Path]) ->
     
     primary_model = os.environ.get("DESCRIBE_MODEL_PRIMARY", "gemini-3.1-pro-preview")
     fallback_model = os.environ.get("DESCRIBE_MODEL_FALLBACK", "gemini-3.1-flash-preview")
+    used_model = primary_model
     primary_retries = int(os.environ.get("PRIMARY_MODEL_RETRIES", "3"))
     timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
     start_time = time.time()
@@ -279,19 +282,7 @@ def judge_product_likeness(client: genai.Client, original_paths: list[Path], gen
 
 import os
 
-def load_env() -> None:
-    env_path = Path(".env")
-    if env_path.exists():
-        with open(env_path) as f:
-            for line in f:
-                if "=" in line and not line.strip().startswith("#"):
-                    key, val = line.strip().split("=", 1)
-                    val = val.strip(''' '"''')
-                    if key.startswith("export "):
-                        key = key[7:]
-                    os.environ[key] = val
-
-load_env()
+load_dotenv()
 
 def load_constraints() -> str:
     constraints_path = Path(__file__).parent / "image_constraints.md"
@@ -300,7 +291,61 @@ def load_constraints() -> str:
             return f.read().strip()
     return ""
 
-def generate_and_judge_images(client: genai.Client, detailed_product: DetailedProduct, output_dir: Path, ref_paths: list[Path] | None = None, image_description: str = "", use_reference_text: bool = True) -> None:
+def rewrite_prompt_with_feedback(client: genai.Client, original_prompt: str, reasoning: str, retry: int) -> tuple[str, StepMetrics]:
+    """
+    Uses Gemini 3.1 Pro to rewrite the image generation prompt based on the judge's critique.
+    """
+    prompt = (
+        "You are an expert prompt engineer for text-to-image models. "
+        "Your task is to improve an image generation prompt based on feedback from a quality judge.\\n\\n"
+        f"Original Prompt:\\n{original_prompt}\\n\\n"
+        f"Judge's Feedback/Reasoning for Failure:\\n{reasoning}\\n\\n"
+        "Generate a new, optimized prompt that incorporates the feedback to fix the issues. "
+        "Make the instructions specific, actionable, and clear for the image generator. "
+        "Output ONLY the new prompt text, nothing else."
+    )
+    
+    model_name = os.environ.get("ENRICH_MODEL_PRIMARY", "gemini-3.1-pro-preview")
+    timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
+    start_time = time.time()
+    
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.5,
+                http_options={'timeout': timeout}
+            )
+        )
+        end_time = time.time()
+        
+        usage = response.usage_metadata
+        input_tokens = usage.prompt_token_count if usage and usage.prompt_token_count is not None else 0
+        output_tokens = usage.candidates_token_count if usage and usage.candidates_token_count is not None else 0
+        total_tokens = input_tokens + output_tokens
+        
+        metrics = StepMetrics(
+            step_name=f"Rewrite Prompt (Attempt {retry})",
+            time_taken=end_time - start_time,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            model_used=model_name
+        )
+        
+        return response.text.strip(), metrics
+    except Exception as e:
+        end_time = time.time()
+        print(f"    [Warning] Failed to rewrite prompt: {e}. Using original prompt.")
+        metrics = StepMetrics(
+            step_name=f"Rewrite Prompt (Attempt {retry}) (Failed)",
+            time_taken=end_time - start_time,
+            model_used=model_name
+        )
+        return original_prompt, metrics
+
+def generate_and_judge_images(client: genai.Client, detailed_product: DetailedProduct, output_dir: Path, ref_paths: list[Path] | None = None, image_description: str = "", use_reference_text: bool = True, stop_event: threading.Event = None) -> None:
     environments = detailed_product.suggested_natural_environments[:2]
     if not environments:
         environments = ["A beautiful, well-lit studio environment", "In a natural lifestyle setting"]
@@ -308,13 +353,15 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
         environments.append(f"{environments[0]}, but from a different aesthetic angle")
         
     all_scenes = ["Seamless pure white background"]  # + environments
-    
     if not detailed_product.metrics:
         detailed_product.metrics = PipelineMetrics()
         
     constraints = load_constraints()
         
     for i, env in enumerate(all_scenes, 1):
+        if stop_event and stop_event.is_set():
+            print(f"  -> Cancellation requested. Stopping image generation.")
+            return
         prompt_base = os.environ.get("GENERATE_PROMPT_BASE", "")
         prompt = (
             f"{constraints}\n\n"
@@ -336,8 +383,12 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
         retry = 0
         max_retries = 3
         passed = False
+        current_prompt = prompt
         
         while retry <= max_retries and not passed:
+            if stop_event and stop_event.is_set():
+                print(f"  -> Cancellation requested. Stopping retry loop.")
+                return
             try:
                 print(f"  -> Generating image {i}/{len(all_scenes)} (Attempt {retry})...")
                 contents = []
@@ -353,7 +404,7 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                             types.Part.from_bytes(data=img_bytes, mime_type=mime)
                         )
                         
-                contents.append(prompt)
+                contents.append(current_prompt)
                 
                 model_name = os.environ.get("GENERATE_MODEL", "gemini-3-pro-image-preview")
                 timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
@@ -416,30 +467,39 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                         score=review.score,
                         reasoning=review.reasoning,
                         retry_count=retry,
-                        image_size_bytes=image_size
+                        image_size_bytes=image_size,
+                        prompt=current_prompt
                     )
                     detailed_product.image_reviews.append(image_review)
                     
-                    if review.score >= 0.9:
+                    threshold = float(os.environ.get("PASS_THRESHOLD", "0.9"))
+                    if review.score >= threshold:
                         passed = True
                         print(f"    Image {i} passed with score {review.score}")
                     else:
                         print(f"    Image {i} failed with score {review.score}")
                         retry += 1
                         if retry <= max_retries:
-                            print(f"    Retrying...")
+                            print(f"    Retrying with improved prompt...")
+                            current_prompt, rewrite_metrics = rewrite_prompt_with_feedback(client, current_prompt, review.reasoning, retry)
+                            detailed_product.metrics.steps.append(rewrite_metrics)
                             continue
                         else:
                             print(f"    Max retries reached.")
                             
-                    # Save final image to product level
-                    dest_image_path = output_dir / f"image_{i}.jpeg"
-                    shutil.copy(image_path, dest_image_path)
-                    image_review.uri = str(dest_image_path)
+                    # Point URI to the generated attempt directly
+                    image_review.uri = str(image_path)
                 else:
                     print("    No reference images to judge likeness.")
-                    standard_path = output_dir / f"image_{i}.jpeg"
-                    shutil.copy(image_path, standard_path)
+                    image_review = ImageReview(
+                        uri=str(image_path),
+                        score=1.0,
+                        reasoning="No reference images provided for likeness evaluation.",
+                        retry_count=retry,
+                        image_size_bytes=image_size,
+                        prompt=current_prompt
+                    )
+                    detailed_product.image_reviews.append(image_review)
                     passed = True
                     
             except APIError as e:
@@ -451,7 +511,9 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                 retry += 1
 
 
-def process_single_product(idx: int, product: ProductImageGenerationData, client: genai.Client, output_base: Path, use_reference_images: bool, force: bool, use_image_description: bool, use_reference_text: bool) -> None:
+def process_single_product(idx: int, product: ProductImageGenerationData, client: genai.Client, output_base: Path, use_reference_images: bool, force: bool, use_image_description: bool, use_reference_text: bool, stop_event: threading.Event) -> None:
+    if stop_event.is_set():
+        return
     wpid = product.wpid or f"unknown_{idx}"
     output_dir = output_base / wpid
     
@@ -500,7 +562,17 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
     if use_reference_images or use_image_description:
         print("  -> Locating reference images...")
         finder = ImageFinder(output_base_dir=output_base)
+        start_time = time.time()
         ref_paths = finder.download_reference_images(product)
+        end_time = time.time()
+        
+        download_metrics = StepMetrics(
+            step_name="Download Reference Images",
+            time_taken=end_time - start_time,
+            model_used="N/A"
+        )
+        detailed.metrics.steps.append(download_metrics)
+        
         if ref_paths:
             for p in ref_paths:
                 print(f"    Saved Reference: {p}")
@@ -525,8 +597,10 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
         print(f"    Description generated and saved.")
         
     # Step 3: Generate and Judge Images with Retries
+    if stop_event.is_set():
+        return
     gen_ref_paths = ref_paths if use_reference_images else []
-    generate_and_judge_images(client, detailed, output_dir, ref_paths=gen_ref_paths, image_description=image_description, use_reference_text=use_reference_text)
+    generate_and_judge_images(client, detailed, output_dir, ref_paths=gen_ref_paths, image_description=image_description, use_reference_text=use_reference_text, stop_event=stop_event)
     
     # Calculate totals
     if detailed.metrics:
@@ -563,16 +637,31 @@ def run_pipeline(file_path: str | Path, max_records: int | None = None, use_refe
     thread_pool_size = int(os.environ.get("THREAD_POOL_SIZE", 5))
     print(f"Using thread pool size: {thread_pool_size}")
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=thread_pool_size) as executor:
-        futures = [
-            executor.submit(
-                process_single_product, 
-                idx, product, client, output_base, use_reference_images, force, use_image_description, use_reference_text
-            ) 
-            for idx, product in enumerate(products, 1)
-        ]
-        # Wait for all to complete
-        concurrent.futures.wait(futures)
+    stop_event = threading.Event()
+
+    semaphore = threading.Semaphore(thread_pool_size)
+    
+    def worker(idx, product):
+        with semaphore:
+            if stop_event.is_set():
+                return
+            process_single_product(idx, product, client, output_base, use_reference_images, force, use_image_description, use_reference_text, stop_event)
+
+    threads = []
+    for idx, product in enumerate(products, 1):
+        t = threading.Thread(target=worker, args=(idx, product), daemon=True)
+        threads.append(t)
+        t.start()
+
+    try:
+        while any(t.is_alive() for t in threads):
+            for t in threads:
+                t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n[!] KeyboardInterrupt received. Exiting immediately...")
+        stop_event.set()
+        import sys
+        sys.exit(1)
         
     # Generate PDF Report using standalone script
     from product_gen.generate_report import run_report

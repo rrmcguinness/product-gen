@@ -8,7 +8,6 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     """
     # Discover images
     ref_images = []
-    gen_images = []
     
     ref_dir = output_dir / "reference_images"
     if ref_dir.exists():
@@ -16,16 +15,32 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             if ref_img.is_file():
                 ref_images.append(f"reference_images/{ref_img.name}")
                 
-    for i in range(1, 5):
-        gen_img = output_dir / f"image_{i}.jpeg"
-        if gen_img.exists():
-            gen_images.append(gen_img.name)
-            
     # Fallbacks
     if not ref_images:
         ref_images.append("https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image")
-    if not gen_images:
-        gen_images.append("https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Generated+Image")
+        
+    # Build Generated Images HTML
+    gen_images_html = ""
+    if product.image_reviews:
+        for review in product.image_reviews:
+            # Use path relative to the current output_dir to handle moved folders
+            filename = Path(review.uri).name
+            img_src = f"generated/{filename}"
+                
+            score = review.score
+            reasoning = review.reasoning.replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n")
+            
+            color = "var(--success-green)" if score >= 0.9 else "red"
+            
+            prompt_text = review.prompt.replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n") if hasattr(review, "prompt") and review.prompt else "N/A"
+            gen_images_html += f"""
+            <div class="image-item" style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                <img src="{img_src}" alt="Generated" onclick="openModal(this.src, '{reasoning}', '{ref_images[0] if ref_images else ""}', '{prompt_text}')" style="border: 3px solid {color}; width: 120px; height: 120px; object-fit: cover; border-radius: 6px; cursor: pointer;">
+                <span style="color: {color}; font-weight: bold; font-size: 14px;">{int(score * 100)} / 90</span>
+            </div>
+            """
+    else:
+        gen_images_html = '<img src="https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Generated+Image" alt="No Generated Image">'
         
     # Extract original details
     orig_name = product.product_name or "Unknown Product"
@@ -37,7 +52,22 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         orig_long_desc = product.product_long_description.product_long_description or orig_long_desc
         orig_url = product.product_long_description.url or orig_url
     elif isinstance(product.product_long_description, str):
-        orig_long_desc = product.product_long_description
+        pld_str = product.product_long_description
+        if pld_str.strip().startswith("{"):
+            import json
+            import re
+            try:
+                pld_dict = json.loads(pld_str)
+                orig_long_desc = pld_dict.get("product_long_description") or pld_dict.get("product_short_description") or pld_str
+            except json.JSONDecodeError:
+                # Fallback to regex extraction if JSON is malformed
+                match = re.search(r'"product_long_description"\s*:\s*"(.*?)(?<!\\\\)"', pld_str, re.DOTALL)
+                if match:
+                    orig_long_desc = match.group(1).replace('\\\\"', '"').replace('\\\\\\\\', '\\\\')
+                else:
+                    orig_long_desc = pld_str
+        else:
+            orig_long_desc = pld_str
         
     # Extract generated details
     gen_name = product.product_name
@@ -45,11 +75,21 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     # Extract reviews
     score_html = "N/A"
     reasoning_html = "No review available."
+    score_color = "var(--success-green)"
+    status_text = "Review"
+    status_class = "status-review"
     if product.image_reviews:
-        # Use the first review
-        review = product.image_reviews[0]
-        score_html = f"{review.score:.2f}"
-        reasoning_html = review.reasoning
+        # Check if ANY review passed
+        if any(r.score >= 0.9 for r in product.image_reviews):
+            status_text = "Pass"
+            status_class = "status-pass"
+            
+        # Use the best review for the main badge
+        best_review = max(product.image_reviews, key=lambda r: r.score)
+        score_html = f"{int(best_review.score * 100)} / 90"
+        reasoning_html = best_review.reasoning
+        if best_review.score < 0.9:
+            score_color = "red"
         
     # Build Process Flow HTML
     flow_html = ""
@@ -80,16 +120,32 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
             :root {{
-                --wm-blue: #0071dc;
-                --wm-dark-blue: #004f9a;
-                --text-main: #2e2f32;
-                --text-sub: #5f6368;
-                --bg-light: #f2f8fd;
-                --border-color: #e3e4e5;
-                --hover-bg: #e1e7ec;
-                --success-green: #2a8703;
-                --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                --bg-dark: #0b0f19;
+                --bg-card: #151c2c;
+                --bg-card-hover: #1e2638;
+                --text-main: #f3f4f6;
+                --text-sub: #9ca3af;
+                --accent-blue: #60a5fa;
+                --accent-cyan: #22d3ee;
+                --accent-green: #059669;
+                --accent-red: #dc2626;
+                --border-color: #262f45;
+                --card-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
             }}
+            .status-tab {{
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                color: white;
+                font-size: 14px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }}
+            .status-pass {{ background-color: var(--accent-green); box-shadow: 0 0 10px rgba(52, 211, 153, 0.3); }}
+            .status-review {{ background-color: var(--accent-red); box-shadow: 0 0 10px rgba(248, 113, 113, 0.3); }}
             * {{
                 box-sizing: border-box;
                 margin: 0;
@@ -97,22 +153,27 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                 font-family: 'Inter', sans-serif;
             }}
             body {{
-                background-color: #f9f9f9;
+                background-color: var(--bg-dark);
                 color: var(--text-main);
                 line-height: 1.5;
                 padding: 20px;
             }}
             header {{
-                background-color: var(--wm-blue);
+                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
                 color: white;
-                padding: 20px;
-                margin-bottom: 20px;
-                border-radius: 8px;
+                padding: 30px;
+                margin-bottom: 30px;
+                border-radius: 12px;
                 box-shadow: var(--card-shadow);
+                position: relative;
+                border: 1px solid var(--border-color);
             }}
             h1 {{
                 font-size: 24px;
                 margin-bottom: 5px;
+                background: linear-gradient(to right, #60a5fa, #22d3ee);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
             }}
             .container {{
                 display: grid;
@@ -120,48 +181,49 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                 gap: 30px;
             }}
             .card {{
-                background-color: #ffffff;
-                border-radius: 8px;
-                padding: 20px;
+                background-color: var(--bg-card);
+                border-radius: 12px;
+                padding: 25px;
                 box-shadow: var(--card-shadow);
                 border: 1px solid var(--border-color);
-                margin-bottom: 20px;
+                margin-bottom: 30px;
             }}
             .section-title {{
                 font-size: 20px;
                 font-weight: 700;
-                color: var(--wm-blue);
-                margin-bottom: 15px;
-                border-bottom: 2px solid var(--wm-blue);
-                padding-bottom: 5px;
+                color: var(--accent-blue);
+                margin-bottom: 20px;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 10px;
             }}
             .image-gallery {{
                 display: flex;
-                gap: 10px;
+                gap: 15px;
                 flex-wrap: wrap;
-                margin-bottom: 15px;
+                margin-bottom: 20px;
             }}
             .image-gallery img {{
                 width: 120px;
                 height: 120px;
                 object-fit: cover;
                 border: 1px solid var(--border-color);
-                border-radius: 6px;
+                border-radius: 8px;
                 cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
+                transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
             }}
             .image-gallery img:hover {{
                 transform: scale(1.05);
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+                border-color: var(--accent-blue);
             }}
             .details-block {{
-                margin-bottom: 15px;
+                margin-bottom: 20px;
             }}
             .details-label {{
                 font-weight: 600;
-                color: var(--text-sub);
+                color: var(--accent-cyan);
                 font-size: 14px;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
             }}
             .details-value {{
                 font-size: 15px;
@@ -171,41 +233,48 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                 list-style: none;
             }}
             .attributes-list li {{
-                margin-bottom: 5px;
+                margin-bottom: 8px;
                 font-size: 14px;
+                display: flex;
+                gap: 5px;
             }}
             .attributes-list strong {{
                 color: var(--text-sub);
+                min-width: 120px;
+                display: inline-block;
             }}
             
             /* Expandable Section */
             details {{
-                background-color: var(--bg-light);
-                padding: 10px;
-                border-radius: 6px;
+                background-color: var(--bg-card-hover);
+                padding: 15px;
+                border-radius: 8px;
                 border: 1px solid var(--border-color);
-                margin-top: 10px;
+                margin-top: 15px;
             }}
             summary {{
                 font-weight: 600;
                 cursor: pointer;
-                color: var(--wm-blue);
+                color: var(--accent-blue);
                 outline: none;
             }}
             details[open] summary {{
-                margin-bottom: 10px;
+                margin-bottom: 15px;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 5px;
             }}
             
             /* Score Badge */
             .score-badge {{
                 display: inline-block;
-                background-color: var(--success-green);
+                background-color: var(--accent-green);
                 color: white;
                 padding: 4px 8px;
                 border-radius: 4px;
                 font-weight: 700;
                 font-size: 14px;
                 margin-left: 10px;
+                box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
             }}
             
             /* Flow Visualization */
@@ -214,31 +283,36 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                 align-items: center;
                 gap: 15px;
                 overflow-x: auto;
-                padding: 10px 0;
+                padding: 15px 0;
             }}
             .flow-node {{
-                background-color: #ffffff;
-                border: 2px solid var(--wm-blue);
-                border-radius: 6px;
-                padding: 10px;
-                min-width: 150px;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+                background-color: var(--bg-card-hover);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 15px;
+                min-width: 160px;
+                box-shadow: var(--card-shadow);
                 font-size: 12px;
                 text-align: center;
+                transition: border-color 0.2s;
+            }}
+            .flow-node:hover {{
+                border-color: var(--accent-blue);
             }}
             .node-name {{
                 font-weight: 700;
-                color: var(--wm-blue);
-                margin-bottom: 4px;
+                color: var(--accent-blue);
+                margin-bottom: 6px;
             }}
             .node-model {{
                 color: var(--text-sub);
                 font-size: 11px;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
             }}
             .node-time {{
                 color: var(--text-main);
                 font-weight: 500;
+                margin-bottom: 4px;
             }}
             .node-tokens {{
                 color: var(--text-sub);
@@ -246,7 +320,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             }}
             .flow-arrow {{
                 font-size: 24px;
-                color: var(--wm-blue);
+                color: var(--accent-cyan);
                 font-weight: 700;
             }}
             
@@ -261,20 +335,21 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                 width: 100%;
                 height: 100%;
                 overflow: auto;
-                background-color: rgba(0,0,0,0.9);
+                background-color: rgba(11, 15, 25, 0.9);
             }}
             .modal-content {{
                 margin: auto;
                 display: block;
                 max-width: 90%;
                 max-height: 80%;
-                border-radius: 8px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
             }}
             .close {{
                 position: absolute;
-                top: 15px;
+                top: 20px;
                 right: 35px;
-                color: #f1f1f1;
+                color: var(--text-sub);
                 font-size: 40px;
                 font-weight: bold;
                 transition: 0.3s;
@@ -282,7 +357,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             }}
             .close:hover,
             .close:focus {{
-                color: #bbb;
+                color: var(--text-main);
                 text-decoration: none;
                 cursor: pointer;
             }}
@@ -291,9 +366,14 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             .origin-link {{
                 display: inline-block;
                 margin-top: 10px;
-                color: var(--wm-blue);
-                text-decoration: underline;
+                color: var(--accent-blue);
+                text-decoration: none;
                 font-size: 14px;
+                border-bottom: 1px solid transparent;
+                transition: border-color 0.2s;
+            }}
+            .origin-link:hover {{
+                border-color: var(--accent-blue);
             }}
         </style>
     </head>
@@ -301,6 +381,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         <header>
             <h1>Product Generation Pipeline: Before & After Report</h1>
             <div>Product ID: {product.wpid or "N/A"}</div>
+            <div class="status-tab {status_class}">{status_text}</div>
         </header>
         
         <!-- Metrics Flow Section -->
@@ -348,14 +429,14 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                     <div class="details-block">
                         <div class="details-label">Generated Images (Click to view full resolution)</div>
                         <div class="image-gallery">
-                            {"".join([f'<img src="{img}" alt="Generated" onclick="openModal(this.src)">' for img in gen_images])}
+                            {gen_images_html}
                         </div>
                     </div>
                     
                     <div class="details-block">
                         <div class="details-label">
                             Quality Score
-                            <span class="score-badge">{score_html}</span>
+                            <span class="score-badge" style="background-color: {score_color};">{score_html}</span>
                         </div>
                         <div class="details-value" style="margin-top: 5px;">
                             <strong>Reasoning:</strong> {reasoning_html}
@@ -404,13 +485,66 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         <!-- The Modal -->
         <div id="myModal" class="modal">
             <span class="close" onclick="closeModal()">&times;</span>
-            <img class="modal-content" id="img01">
+            
+            <!-- Images Container -->
+            <div style="display: flex; justify-content: center; gap: 30px; max-width: 90%; margin: auto; align-items: center;">
+                <!-- Reference Image -->
+                <div style="text-align: center; flex: 1; max-width: 600px;">
+                    <div style="color: white; margin-bottom: 10px; font-weight: bold; font-size: 16px;">Reference Image</div>
+                    <div style="height: 60vh; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;">
+                        <img id="img_ref" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                    </div>
+                </div>
+                
+                <!-- Generated Image -->
+                <div style="text-align: center; flex: 1; max-width: 600px;">
+                    <div style="color: white; margin-bottom: 10px; font-weight: bold; font-size: 16px;">Generated Image</div>
+                    <div style="height: 60vh; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;">
+                        <img id="img01" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reasoning Card -->
+            <div style="max-width: 90%; margin: 20px auto; background: var(--bg-card); border-radius: 12px; padding: 25px; box-shadow: var(--card-shadow); border: 1px solid var(--border-color);">
+                <h3 style="color: var(--accent-blue); margin-bottom: 15px; font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Judge's Reasoning</h3>
+                <div id="modal-reasoning" style="color: var(--text-main); text-align: left; font-size: 14px; white-space: pre-wrap; margin-bottom: 20px;"></div>
+                
+                <h3 style="color: var(--accent-blue); margin-bottom: 15px; font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Prompt Used</h3>
+                <div id="modal-prompt" style="color: var(--text-sub); text-align: left; font-size: 12px; white-space: pre-wrap; font-family: monospace; background: var(--bg-card-hover); padding: 15px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
+            </div>
         </div>
 
         <script>
-            function openModal(src) {{
+            function openModal(src, reasoning, refSrc, promptText) {{
                 document.getElementById('myModal').style.display = "block";
                 document.getElementById('img01').src = src;
+                document.getElementById('img_ref').src = refSrc || 'https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image';
+                document.getElementById('modal-reasoning').innerText = reasoning;
+                document.getElementById('modal-prompt').innerText = promptText || 'No prompt recorded.';
+            }}
+
+            function closeModal() {{
+                document.getElementById('myModal').style.display = "none";
+            }}
+            
+            window.onclick = function(event) {{
+                let modal = document.getElementById('myModal');
+                if (event.target == modal) {{
+                    modal.style.display = "none";
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+
+        <script>
+            function openModal(src, reasoning, refSrc, promptText) {{
+                document.getElementById('myModal').style.display = "block";
+                document.getElementById('img01').src = src;
+                document.getElementById('img_ref').src = refSrc || 'https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image';
+                document.getElementById('modal-reasoning').innerText = reasoning;
+                document.getElementById('modal-prompt').innerText = promptText || 'No prompt recorded.';
             }}
 
             function closeModal() {{

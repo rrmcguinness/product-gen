@@ -5,7 +5,7 @@ class ProductLongDescriptionDetail(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         str_strip_whitespace=True,
-        extra='allow',
+        extra='ignore',
     )
     retailer_id: Optional[str] = None
     competitor_name: Optional[str] = None
@@ -79,6 +79,7 @@ class ImageReview(BaseModel):
     reasoning: str = Field(description="Reasoning for the score")
     retry_count: int = Field(default=0, description="Number of retries for this image")
     image_size_bytes: Optional[int] = Field(default=None, description="Size of the generated image in bytes")
+    prompt: Optional[str] = Field(default=None, description="The specific prompt used for this attempt")
 
 class SchemaProductAttributes(BaseModel):
     color: Optional[str] = Field(default=None, description="The color of the product (Schema.org: color)")

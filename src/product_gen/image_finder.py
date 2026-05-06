@@ -49,6 +49,12 @@ class ImageFinder:
             except (json.JSONDecodeError, TypeError):
                 pass
                 
+        # Fallback to regex if no URLs found and pld is a string
+        if not urls and isinstance(product.product_long_description, str):
+            import re
+            found_urls = re.findall(r'https?://[^\s"]+\.(?:jpg|jpeg|png|webp)', product.product_long_description)
+            urls.extend(found_urls)
+            
         # Deduplicate while preserving order
         return list(dict.fromkeys(urls))
 
