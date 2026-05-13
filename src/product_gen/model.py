@@ -104,12 +104,18 @@ class StepMetrics(BaseModel):
     output_tokens: Optional[int] = Field(default=None, description="Number of output tokens")
     total_tokens: Optional[int] = Field(default=None, description="Total tokens used")
     model_used: Optional[str] = Field(default=None, description="Model used for this step")
+    retries: int = Field(default=0, description="Number of retries for this step")
+    http_errors: dict[int, int] = Field(default_factory=dict, description="Mapping of HTTP error codes to counts for this step")
+    images_passed: Optional[bool] = Field(default=None, description="True if images were passed with the prompt")
 
 class PipelineMetrics(BaseModel):
     total_time: float = Field(default=0.0, description="Total time taken for the pipeline")
     steps: List[StepMetrics] = Field(default_factory=list, description="Metrics for each step")
     total_tokens: int = Field(default=0, description="Total tokens used across all steps")
     average_tokens_per_step: float = Field(default=0.0, description="Average tokens per step")
+    total_retries: int = Field(default=0, description="Total number of retries across all steps")
+    http_errors: dict[int, int] = Field(default_factory=dict, description="Mapping of HTTP error codes to counts")
+    retries_to_pass: Optional[int] = Field(default=None, description="Number of retries it took to pass the likeness test")
 
 class DetailedProduct(ProductImageGenerationData):
     """

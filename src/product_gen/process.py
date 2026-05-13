@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from .image_finder import ImageFinder
 from .pdp import generate_pdp_html
 from dotenv import load_dotenv
+from .utils import call_gemini, LLMError
 
 
 def retry_with_backoff(max_retries=5, base_delay=2, backoff_factor=2):
@@ -57,40 +58,46 @@ def enrich_product(client: genai.Client, product_json: str) -> tuple[DetailedPro
     start_time = time.time()
     response = None
     
-    for attempt in range(primary_retries + 1):
+    used_model = primary_model
+    try:
+        response, metrics = call_gemini(
+            client=client,
+            model=primary_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[{"google_search": {}}],
+                temperature=0.4,
+                http_options={'timeout': timeout},
+                system_instruction=os.environ.get("ENRICH_INSTRUCTIONS", "")
+            ),
+            step_name="Enrich Product (Primary)",
+            max_retries=primary_retries
+        )
+    except LLMError as e:
+        print(f"    Primary model failed. Trying fallback {fallback_model}...")
         try:
-            if attempt > 0:
-                print(f"  -> Retrying primary model {primary_model} (Attempt {attempt}/{primary_retries})...")
-            response = client.models.generate_content(
-                model=primary_model,
+            response, fallback_metrics = call_gemini(
+                client=client,
+                model=fallback_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     tools=[{"google_search": {}}],
                     temperature=0.4,
-                    http_options={'timeout': timeout}
-                )
+                    http_options={'timeout': timeout},
+                    system_instruction=os.environ.get("ENRICH_INSTRUCTIONS", "")
+                ),
+                step_name="Enrich Product (Fallback)",
+                max_retries=0
             )
-            break
-        except Exception as e:
-            print(f"  -> Primary model {primary_model} failed: {e}.")
-            if attempt < primary_retries:
-                delay = 2 ** attempt
-                print(f"    Waiting {delay}s before retry...")
-                time.sleep(delay)
-            else:
-                print(f"    Max retries reached for primary model. Trying fallback {fallback_model}...")
-                used_model = fallback_model
-                response = client.models.generate_content(
-                    model=fallback_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        tools=[{"google_search": {}}],
-                        temperature=0.4,
-                        http_options={'timeout': timeout}
-                    )
-                )
-    end_time = time.time()
-        
+            used_model = fallback_model
+            metrics = fallback_metrics
+            for code, count in e.metrics.http_errors.items():
+                metrics.http_errors[code] = metrics.http_errors.get(code, 0) + count
+            metrics.retries += e.metrics.retries
+        except LLMError as e2:
+            e2.metrics.http_errors.update(e.metrics.http_errors)
+            e2.metrics.retries += e.metrics.retries
+            raise e2
     text = response.text.strip()
     if text.startswith("```json"):
         text = text[7:]
@@ -109,20 +116,8 @@ def enrich_product(client: genai.Client, product_json: str) -> tuple[DetailedPro
     )
     obj.generation_model = used_model
     
-    # Extract tokens
-    usage = response.usage_metadata
-    input_tokens = usage.prompt_token_count if usage and usage.prompt_token_count is not None else 0
-    output_tokens = usage.candidates_token_count if usage and usage.candidates_token_count is not None else 0
-    total_tokens = input_tokens + output_tokens
-    
-    metrics = StepMetrics(
-        step_name="Enrich Product",
-        time_taken=end_time - start_time,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        model_used=used_model
-    )
+    # Metrics are already collected by the wrapper
+    metrics.step_name = "Enrich Product"
     
     return obj, metrics
 
@@ -153,49 +148,43 @@ def describe_product_from_images(client: genai.Client, ref_paths: list[Path]) ->
     start_time = time.time()
     response = None
     
-    for attempt in range(primary_retries + 1):
+    try:
+        response, metrics = call_gemini(
+            client=client,
+            model=primary_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                http_options={'timeout': timeout},
+                system_instruction=os.environ.get("DESCRIBE_INSTRUCTIONS", "")
+            ),
+            step_name="Describe Product from Images (Primary)",
+            max_retries=primary_retries
+        )
+    except LLMError as e:
+        print(f"    Primary model failed. Trying fallback {fallback_model}...")
         try:
-            if attempt > 0:
-                print(f"  -> Retrying primary model {primary_model} (Attempt {attempt}/{primary_retries})...")
-            response = client.models.generate_content(
-                model=primary_model,
+            response, fallback_metrics = call_gemini(
+                client=client,
+                model=fallback_model,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    http_options={'timeout': timeout}
-                )
+                    http_options={'timeout': timeout},
+                    system_instruction=os.environ.get("DESCRIBE_INSTRUCTIONS", "")
+                ),
+                step_name="Describe Product from Images (Fallback)",
+                max_retries=0
             )
-            break
-        except Exception as e:
-            print(f"  -> Primary model {primary_model} failed: {e}.")
-            if attempt < primary_retries:
-                delay = 2 ** attempt
-                print(f"    Waiting {delay}s before retry...")
-                time.sleep(delay)
-            else:
-                print(f"    Max retries reached for primary model. Trying fallback {fallback_model}...")
-                used_model = fallback_model
-                response = client.models.generate_content(
-                    model=fallback_model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        http_options={'timeout': timeout}
-                    )
-                )
-    end_time = time.time()
-        
-    usage = response.usage_metadata
-    input_tokens = usage.prompt_token_count if usage and usage.prompt_token_count is not None else 0
-    output_tokens = usage.candidates_token_count if usage and usage.candidates_token_count is not None else 0
-    total_tokens = input_tokens + output_tokens
-    
-    metrics = StepMetrics(
-        step_name="Describe Product from Images",
-        time_taken=end_time - start_time,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        model_used=used_model
-    )
+            used_model = fallback_model
+            metrics = fallback_metrics
+            for code, count in e.metrics.http_errors.items():
+                metrics.http_errors[code] = metrics.http_errors.get(code, 0) + count
+            metrics.retries += e.metrics.retries
+        except LLMError as e2:
+            e2.metrics.http_errors.update(e.metrics.http_errors)
+            e2.metrics.retries += e.metrics.retries
+            raise e2
+    # Metrics are already collected by the wrapper
+    metrics.step_name = "Describe Product from Images"
         
     return response.text.strip(), used_model, metrics
 
@@ -237,9 +226,9 @@ def judge_product_likeness(client: genai.Client, original_paths: list[Path], gen
     
     model_name = os.environ.get("JUDGE_MODEL", "gemini-2.5-pro")
     timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
-    start_time = time.time()
     try:
-        response = client.models.generate_content(
+        response, metrics = call_gemini(
+            client=client,
             model=model_name,
             contents=contents,
             config=types.GenerateContentConfig(
@@ -250,34 +239,17 @@ def judge_product_likeness(client: genai.Client, original_paths: list[Path], gen
                 response_mime_type="application/json",
                 response_schema=ProductLikenessReview,
                 http_options={'timeout': timeout}
-            )
-        )
-        end_time = time.time()
-        
-        usage = response.usage_metadata
-        input_tokens = usage.prompt_token_count if usage and usage.prompt_token_count is not None else 0
-        output_tokens = usage.candidates_token_count if usage and usage.candidates_token_count is not None else 0
-        total_tokens = input_tokens + output_tokens
-        
-        metrics = StepMetrics(
+            ),
             step_name="Judge Product Likeness",
-            time_taken=end_time - start_time,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            model_used=model_name
+            max_retries=0
         )
-        
         return ProductLikenessReview.model_validate_json(response.text.strip()), metrics
-    except (APIError, ValidationError) as e:
-        end_time = time.time()
-        print(f"    Judge failed: {e}")
-        metrics = StepMetrics(
-            step_name="Judge Product Likeness (Failed)",
-            time_taken=end_time - start_time,
-            model_used=model_name
-        )
-        return ProductLikenessReview(score=0.0, reasoning=f"Judge failed with error: {e}"), metrics
+    except LLMError as e:
+        print(f"    Judge failed: {e.original_error}")
+        return ProductLikenessReview(score=0.0, reasoning=f"Judge failed with error: {e.original_error}"), e.metrics
+    except ValidationError as e:
+        print(f"    Validation failed on judge response: {e}")
+        return ProductLikenessReview(score=0.0, reasoning=f"Validation failed on judge response: {e}"), metrics
 
 
 import os
@@ -295,57 +267,32 @@ def rewrite_prompt_with_feedback(client: genai.Client, original_prompt: str, rea
     """
     Uses Gemini 3.1 Pro to rewrite the image generation prompt based on the judge's critique.
     """
-    prompt = (
-        "You are an expert prompt engineer for text-to-image models. "
-        "Your task is to improve an image generation prompt based on feedback from a quality judge.\\n\\n"
-        f"Original Prompt:\\n{original_prompt}\\n\\n"
-        f"Judge's Feedback/Reasoning for Failure:\\n{reasoning}\\n\\n"
-        "Generate a new, optimized prompt that incorporates the feedback to fix the issues. "
-        "Make the instructions specific, actionable, and clear for the image generator. "
-        "Output ONLY the new prompt text, nothing else."
+    prompt_template = os.environ.get(
+        "REWRITE_PROMPT",
+        "You are an expert prompt engineer for text-to-image models. Your task is to improve an image generation prompt based on feedback from a quality judge.\\n\\nOriginal Prompt:\\n{original_prompt}\\n\\nJudge's Feedback/Reasoning for Failure:\\n{reasoning}\\n\\nGenerate a new, optimized prompt that incorporates the feedback to fix the issues. Make the instructions specific, actionable, and clear for the image generator. Output ONLY the new prompt text, nothing else."
     )
+    prompt = prompt_template.replace("\\n", "\n").format(original_prompt=original_prompt, reasoning=reasoning)
     
     model_name = os.environ.get("ENRICH_MODEL_PRIMARY", "gemini-3.1-pro-preview")
     timeout = int(os.environ.get("API_CALL_TIMEOUT", "60")) * 1000
-    start_time = time.time()
-    
     try:
-        response = client.models.generate_content(
+        response, metrics = call_gemini(
+            client=client,
             model=model_name,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.5,
                 http_options={'timeout': timeout}
-            )
-        )
-        end_time = time.time()
-        
-        usage = response.usage_metadata
-        input_tokens = usage.prompt_token_count if usage and usage.prompt_token_count is not None else 0
-        output_tokens = usage.candidates_token_count if usage and usage.candidates_token_count is not None else 0
-        total_tokens = input_tokens + output_tokens
-        
-        metrics = StepMetrics(
+            ),
             step_name=f"Rewrite Prompt (Attempt {retry})",
-            time_taken=end_time - start_time,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            model_used=model_name
+            max_retries=0
         )
-        
         return response.text.strip(), metrics
-    except Exception as e:
-        end_time = time.time()
-        print(f"    [Warning] Failed to rewrite prompt: {e}. Using original prompt.")
-        metrics = StepMetrics(
-            step_name=f"Rewrite Prompt (Attempt {retry}) (Failed)",
-            time_taken=end_time - start_time,
-            model_used=model_name
-        )
-        return original_prompt, metrics
+    except LLMError as e:
+        print(f"    [Warning] Failed to rewrite prompt: {e.original_error}. Using original prompt.")
+        return original_prompt, e.metrics
 
-def generate_and_judge_images(client: genai.Client, detailed_product: DetailedProduct, output_dir: Path, ref_paths: list[Path] | None = None, image_description: str = "", use_reference_text: bool = True, stop_event: threading.Event = None) -> None:
+def generate_and_judge_images(client: genai.Client, detailed_product: DetailedProduct, output_dir: Path, ref_paths: list[Path] | None = None, image_description: str = "", use_reference_text: bool = True, use_ref_images_in_gen: bool = False, stop_event: threading.Event = None) -> None:
     environments = detailed_product.suggested_natural_environments[:2]
     if not environments:
         environments = ["A beautiful, well-lit studio environment", "In a natural lifestyle setting"]
@@ -392,7 +339,7 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
             try:
                 print(f"  -> Generating image {i}/{len(all_scenes)} (Attempt {retry})...")
                 contents = []
-                if ref_paths:
+                if ref_paths and use_ref_images_in_gen:
                     for rp in ref_paths:
                         with open(rp, "rb") as f:
                             img_bytes = f.read()
@@ -429,7 +376,8 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=total_tokens,
-                    model_used=model_name
+                    model_used=model_name,
+                    images_passed=bool(ref_paths and use_ref_images_in_gen)
                 )
                 detailed_product.metrics.steps.append(gen_metrics)
                 
@@ -455,9 +403,8 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                     retry += 1
                     continue
                     
-                # Judge the image
                 if ref_paths:
-                    print(f"    Judging image {i} (Attempt {retry})...")
+                    print(f"    Judging image {i} (Attempt {retry}) against {len(ref_paths)} reference images...")
                     review, judge_metrics = judge_product_likeness(client, ref_paths, image_path, image_description or detailed_product.detailed_description)
                     detailed_product.metrics.steps.append(judge_metrics)
                     print(f"    Score: {review.score}")
@@ -475,6 +422,7 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                     threshold = float(os.environ.get("PASS_THRESHOLD", "0.9"))
                     if review.score >= threshold:
                         passed = True
+                        detailed_product.metrics.retries_to_pass = retry
                         print(f"    Image {i} passed with score {review.score}")
                     else:
                         print(f"    Image {i} failed with score {review.score}")
@@ -490,25 +438,31 @@ def generate_and_judge_images(client: genai.Client, detailed_product: DetailedPr
                     # Point URI to the generated attempt directly
                     image_review.uri = str(image_path)
                 else:
-                    print("    No reference images to judge likeness.")
+                    print("    No reference images to judge likeness. Flagging for review.")
                     image_review = ImageReview(
                         uri=str(image_path),
-                        score=1.0,
-                        reasoning="No reference images provided for likeness evaluation.",
+                        score=0.0,
+                        reasoning="No reference images provided for likeness evaluation. Automatically flagged for manual review.",
                         retry_count=retry,
                         image_size_bytes=image_size,
                         prompt=current_prompt
                     )
                     detailed_product.image_reviews.append(image_review)
                     passed = True
+                    detailed_product.metrics.retries_to_pass = 0
                     
             except APIError as e:
-                print(f"    Failed to generate image {i} (API Error): {e}")
+                code = getattr(e, 'code', None) or getattr(e, 'status_code', None) or 0
+                detailed_product.metrics.http_errors[code] = detailed_product.metrics.http_errors.get(code, 0) + 1
+                print(f"    Failed to generate image {i} (API Error {code}): {e}")
                 retry += 1
                 time.sleep(2 ** retry)
             except Exception as e:
+                detailed_product.metrics.http_errors[0] = detailed_product.metrics.http_errors.get(0, 0) + 1
                 print(f"    Unexpected error during image generation {i}: {e}")
                 retry += 1
+        
+        detailed_product.metrics.total_retries += retry
 
 
 def process_single_product(idx: int, product: ProductImageGenerationData, client: genai.Client, output_base: Path, use_reference_images: bool, force: bool, use_image_description: bool, use_reference_text: bool, stop_event: threading.Event) -> None:
@@ -533,6 +487,9 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
         detailed, enrich_metrics = enrich_product(client, product_json)
         
         detailed.metrics = PipelineMetrics(steps=[enrich_metrics])
+        detailed.metrics.total_retries += enrich_metrics.retries
+        for code, count in enrich_metrics.http_errors.items():
+            detailed.metrics.http_errors[code] = detailed.metrics.http_errors.get(code, 0) + count
         
         # Forward the original product properties
         for field in product.model_fields_set:
@@ -561,10 +518,12 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
     ref_paths = []
     if use_reference_images or use_image_description:
         print("  -> Locating reference images...")
-        finder = ImageFinder(output_base_dir=output_base)
+        finder = ImageFinder(client=client, output_base_dir=output_base)
         start_time = time.time()
-        ref_paths = finder.download_reference_images(product)
+        ref_paths, finder_metrics = finder.download_reference_images(product)
         end_time = time.time()
+        
+        detailed.metrics.steps.append(finder_metrics)
         
         download_metrics = StepMetrics(
             step_name="Download Reference Images",
@@ -578,18 +537,23 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
                 print(f"    Saved Reference: {p}")
         else:
             print("    No reference URLs detected.")
+            if use_reference_images or use_image_description:
+                print(f"  -> [Warning] No reference images found for {wpid}. Proceeding with text-only generation.")
     else:
         print("    Skipping reference images as requested.")
         
     # Step 2.5: Describe product from images if requested
     image_description = ""
     if use_image_description and ref_paths:
-        print("  -> Describing product from reference images...")
+        print(f"  -> Describing product from {len(ref_paths)} reference images...")
         image_description, desc_model, desc_metrics = describe_product_from_images(client, ref_paths)
         detailed.image_based_description = image_description
         detailed.image_description_model = desc_model
         
         detailed.metrics.steps.append(desc_metrics)
+        detailed.metrics.total_retries += desc_metrics.retries
+        for code, count in desc_metrics.http_errors.items():
+            detailed.metrics.http_errors[code] = detailed.metrics.http_errors.get(code, 0) + count
         
         # Resave detail json with the new description
         with open(detail_path, "w") as f:
@@ -599,8 +563,7 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
     # Step 3: Generate and Judge Images with Retries
     if stop_event.is_set():
         return
-    gen_ref_paths = ref_paths if use_reference_images else []
-    generate_and_judge_images(client, detailed, output_dir, ref_paths=gen_ref_paths, image_description=image_description, use_reference_text=use_reference_text, stop_event=stop_event)
+    generate_and_judge_images(client, detailed, output_dir, ref_paths=ref_paths, image_description=image_description, use_reference_text=use_reference_text, use_ref_images_in_gen=use_reference_images, stop_event=stop_event)
     
     # Calculate totals
     if detailed.metrics:
@@ -618,14 +581,19 @@ def process_single_product(idx: int, product: ProductImageGenerationData, client
     generate_pdp_html(detailed, output_dir)
 
 
-def run_pipeline(file_path: str | Path, max_records: int | None = None, use_reference_images: bool = True, force: bool = False, use_image_description: bool = False, use_reference_text: bool = True) -> list[ProductImageGenerationData]:
+def run_pipeline(file_path: str | Path, max_records: int | None = None, use_reference_images: bool = False, force: bool = False, use_image_description: bool = False, use_reference_text: bool = True, output_dir: str | Path | None = None) -> list[ProductImageGenerationData]:
+    if use_reference_images:
+        print("\n[!] WARNING: use_reference_images is set to True. This removes image indemnification.\n")
     print(f"Loading data from: {file_path}")
     products = read_product_data(file_path)
     
     print(f"Successfully loaded {len(products)} products into memory.")
     
-    file_stem = Path(file_path).stem
-    output_base = Path("output") / file_stem
+    if output_dir:
+        output_base = Path(output_dir)
+    else:
+        file_stem = Path(file_path).stem
+        output_base = Path("output") / file_stem
     
     # Initialize the GenAI client using the Developer API with the key from .env
     client = genai.Client()
@@ -680,11 +648,9 @@ def main() -> None:
         help="Strict limit on records to process. Less than 1 or omitted means all records."
     )
     parser.add_argument(
-        "--useReferenceImages", "--useRefernceImages",
-        type=str,
-        default="True",
-        choices=["True", "False"],
-        help="Use reference images for generation (True/False)"
+        "--use-reference-images",
+        action="store_true",
+        help="Use reference images for generation and likeness judging."
     )
     parser.add_argument(
         "--force",
@@ -692,16 +658,14 @@ def main() -> None:
         help="Force regeneration of products even if they already exist."
     )
     parser.add_argument(
-        "--useImageDescription",
-        type=str,
-        default="False",
-        choices=["True", "False"],
-        help="Generate detailed description from reference images and use for generation (True/False)"
+        "--use-image-description",
+        action="store_true",
+        help="Generate detailed description from reference images and use for generation."
     )
     parser.add_argument(
-        "--no-refs",
+        "--no-product-description",
         action="store_true",
-        help="Do not use reference images or reference text for generation."
+        help="Do not use the product's text description in the prompt."
     )
     parser.add_argument(
         "--file", "-f",
@@ -709,19 +673,20 @@ def main() -> None:
         default="data/Google_50_skus_image_generation.xlsx",
         help="Path to the product Excel file"
     )
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        default=None,
+        help="Custom output directory"
+    )
     args = parser.parse_args()
     
-    use_ref = args.useReferenceImages == "True"
-    use_desc = args.useImageDescription == "True"
-    use_text = True
-    
-    if args.no_refs:
-        use_ref = False
-        use_desc = False
-        use_text = False
+    use_ref = args.use_reference_images
+    use_desc = args.use_image_description
+    use_text = not args.no_product_description
         
     file_path = Path(args.file)
-    run_pipeline(file_path, max_records=args.max_records, use_reference_images=use_ref, force=args.force, use_image_description=use_desc, use_reference_text=use_text)
+    run_pipeline(file_path, max_records=args.max_records, use_reference_images=use_ref, force=args.force, use_image_description=use_desc, use_reference_text=use_text, output_dir=args.output)
 
 
 if __name__ == "__main__":

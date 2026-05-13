@@ -26,7 +26,17 @@ def run_report(output_dir: Path) -> None:
         "total_time": 0.0,
         "total_input_cost": 0.0,
         "total_output_cost": 0.0,
-        "total_cost": 0.0
+        "total_cost": 0.0,
+        "total_http_errors": {},
+        "retries_to_pass_list": [],
+        "try_buckets": {
+            "try_1": 0,
+            "try_2": 0,
+            "try_3": 0,
+            "try_4": 0,
+            "try_5": 0,
+            "failed": 0
+        }
     }
     
     # Assumed rates (Gemini 1.5 Pro)
@@ -61,8 +71,7 @@ def run_report(output_dir: Path) -> None:
                                 prod_success += 1
                             else:
                                 prod_fail += 1
-                            
-                            stats["total_retries"] += retries
+                                
                             prod_retries += retries
                             
                         if prod_success > 0:
@@ -93,6 +102,35 @@ def run_report(output_dir: Path) -> None:
                     
                     if metrics:
                         prod_time = metrics.get("total_time", 0.0)
+                        
+                        # Use total_retries from metrics if available
+                        stats["total_retries"] += metrics.get("total_retries", 0)
+                        
+                        # Collect HTTP errors
+                        prod_http_errors = metrics.get("http_errors", {})
+                        for code, count in prod_http_errors.items():
+                            code_str = str(code)
+                            stats["total_http_errors"][code_str] = stats["total_http_errors"].get(code_str, 0) + count
+                            
+                        # Collect retries to pass
+                        retries_to_pass = metrics.get("retries_to_pass")
+                        if retries_to_pass is not None:
+                            stats["retries_to_pass_list"].append(retries_to_pass)
+                            
+                        if prod_success > 0:
+                            r = retries_to_pass if retries_to_pass is not None else 0
+                            if r == 0:
+                                stats["try_buckets"]["try_1"] += 1
+                            elif r == 1:
+                                stats["try_buckets"]["try_2"] += 1
+                            elif r == 2:
+                                stats["try_buckets"]["try_3"] += 1
+                            elif r == 3:
+                                stats["try_buckets"]["try_4"] += 1
+                            elif r >= 4:
+                                stats["try_buckets"]["try_5"] += 1
+                        else:
+                            stats["try_buckets"]["failed"] += 1
                         
                         prod_input_tokens = 0
                         prod_output_tokens = 0
@@ -167,13 +205,31 @@ def run_report(output_dir: Path) -> None:
                 except Exception as e:
                     stats["errors"].append(f"Error reading {detail_path}: {e}")
                     
+    # Calculate median retries to pass
+    retries_list = stats.pop("retries_to_pass_list", [])
+    median_retries = 0.0
+    if retries_list:
+        s_list = sorted(retries_list)
+        n = len(s_list)
+        if n % 2 != 0:
+            median_retries = float(s_list[n//2])
+        else:
+            median_retries = (s_list[n//2 - 1] + s_list[n//2]) / 2.0
+    stats["median_retries"] = median_retries
+                    
+    # Calculate time stats
+    times = [prod["time"] for prod in stats["product_details"] if prod["time"] > 0]
+    stats["min_time"] = min(times) if times else 0.0
+    stats["max_time"] = max(times) if times else 0.0
+    stats["avg_time"] = sum(times) / len(times) if times else 0.0
+                    
     # Calculate score distribution
     score_buckets = [0] * 10
     for prod in stats["product_details"]:
         score = int(prod.get("best_score", 0.0) * 100)
         bucket = min(score // 10, 9)
         score_buckets[bucket] += 1
-
+        
     # Calculate category stats
     category_stats = {}
     for prod in stats["product_details"]:
@@ -286,8 +342,16 @@ def run_report(output_dir: Path) -> None:
         </header>
         
         <div class="summary-cards">
-            <div class="summary-card"><div class="summary-value">{stats['success_count']}</div><div>Passed</div></div>
-            <div class="summary-card"><div class="summary-value">{stats['fail_count']}</div><div>Need Review</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['success_count']}</div><div>Total Success</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['fail_count']}</div><div>Total Failure</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['try_buckets']['try_1']}</div><div>Success Try 1</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['try_buckets']['try_2']}</div><div>Success Try 2</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['try_buckets']['try_3']}</div><div>Success Try 3</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['try_buckets']['try_4']}</div><div>Success Try 4</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['try_buckets']['try_5']}</div><div>Success Try 5</div></div>
+        </div>
+        
+        <div class="summary-cards">
             <div class="summary-card">
                 <div class="summary-value">{stats['total_tokens']}</div>
                 <div>Tokens Used</div>
@@ -295,7 +359,26 @@ def run_report(output_dir: Path) -> None:
                     In: {stats['total_input_tokens']} | Out: {stats['total_output_tokens']}
                 </div>
             </div>
-            <div class="summary-card"><div class="summary-value">${stats['total_cost']:.4f}</div><div>Estimated Total Cost</div></div>
+            <div class="summary-card"><div class="summary-value">${stats['total_cost']:.4f}</div><div>Estimated Cost</div></div>
+        </div>
+        
+        <div class="summary-cards">
+            <div class="summary-card"><div class="summary-value">{stats['total_retries']}</div><div>Total Retries</div></div>
+            <div class="summary-card"><div class="summary-value">{stats['median_retries']:.1f}</div><div>Median Retries to Pass</div></div>
+            <div class="summary-card">
+                <div class="summary-value">{sum(stats['total_http_errors'].values())}</div>
+                <div>Total HTTP Errors</div>
+                <div style="font-size: 12px; color: var(--text-sub); margin-top: 5px;">
+                    {', '.join([f"Code {k}: {v}" for k, v in stats['total_http_errors'].items()]) or "None"}
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-value">{stats['avg_time']:.1f}s</div>
+                <div>Avg Process Time</div>
+                <div style="font-size: 12px; color: var(--text-sub); margin-top: 5px;">
+                    Min: {stats['min_time']:.1f}s | Max: {stats['max_time']:.1f}s
+                </div>
+            </div>
         </div>
         
         <div class="charts-container">

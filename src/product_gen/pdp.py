@@ -1,11 +1,20 @@
 import textwrap
 from pathlib import Path
+import html
 from .model import DetailedProduct, ProductLongDescriptionDetail
+from dotenv import load_dotenv
+import json
+
+load_dotenv()
 
 def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     """
     Generates a comparative report showing before and after with cards and flow.
     """
+    import os
+    threshold = float(os.environ.get("PASS_THRESHOLD", "0.9"))
+    threshold_display = int(threshold * 100)
+    
     # Discover images
     ref_images = []
     
@@ -28,15 +37,21 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             img_src = f"generated/{filename}"
                 
             score = review.score
-            reasoning = review.reasoning.replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n")
+            reasoning = html.escape(review.reasoning)
+            prompt_text = html.escape(review.prompt) if hasattr(review, "prompt") and review.prompt else "N/A"
             
-            color = "var(--success-green)" if score >= 0.9 else "red"
+            color = "var(--accent-green)" if score >= threshold else "var(--accent-red)"
             
-            prompt_text = review.prompt.replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n") if hasattr(review, "prompt") and review.prompt else "N/A"
             gen_images_html += f"""
             <div class="image-item" style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
-                <img src="{img_src}" alt="Generated" onclick="openModal(this.src, '{reasoning}', '{ref_images[0] if ref_images else ""}', '{prompt_text}')" style="border: 3px solid {color}; width: 120px; height: 120px; object-fit: cover; border-radius: 6px; cursor: pointer;">
-                <span style="color: {color}; font-weight: bold; font-size: 14px;">{int(score * 100)} / 90</span>
+                <img src="{img_src}" alt="Generated" 
+                     data-reasoning="{reasoning}" 
+                     data-prompt="{prompt_text}" 
+                     data-ref-images='{json.dumps(ref_images)}'
+                     data-type="generated"
+                     onclick="openModal(this)" 
+                     style="border: 3px solid {color}; width: 120px; height: 120px; object-fit: cover; border-radius: 6px; cursor: pointer;">
+                <span style="color: {color}; font-weight: bold; font-size: 14px;">{int(score * 100)} / {threshold_display}</span>
             </div>
             """
     else:
@@ -54,7 +69,6 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     elif isinstance(product.product_long_description, str):
         pld_str = product.product_long_description
         if pld_str.strip().startswith("{"):
-            import json
             import re
             try:
                 pld_dict = json.loads(pld_str)
@@ -80,15 +94,15 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     status_class = "status-review"
     if product.image_reviews:
         # Check if ANY review passed
-        if any(r.score >= 0.9 for r in product.image_reviews):
+        if any(r.score >= threshold for r in product.image_reviews):
             status_text = "Pass"
             status_class = "status-pass"
             
         # Use the best review for the main badge
         best_review = max(product.image_reviews, key=lambda r: r.score)
-        score_html = f"{int(best_review.score * 100)} / 90"
+        score_html = f"{int(best_review.score * 100)} / {threshold_display}"
         reasoning_html = best_review.reasoning
-        if best_review.score < 0.9:
+        if best_review.score < threshold:
             score_color = "red"
         
     # Build Process Flow HTML
@@ -96,12 +110,20 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
     if product.metrics and product.metrics.steps:
         flow_html = '<div class="flow-container">'
         for idx, step in enumerate(product.metrics.steps):
+            badge_html = ""
+            if getattr(step, "images_passed", None) is not None:
+                if step.images_passed:
+                    badge_html = '<div class="badge badge-image">Image + Prompt</div>'
+                else:
+                    badge_html = '<div class="badge badge-prompt">Prompt Only</div>'
+            
             flow_html += f"""
             <div class="flow-node">
                 <div class="node-name">{step.step_name}</div>
                 <div class="node-model">{step.model_used or "N/A"}</div>
                 <div class="node-time">{step.time_taken:.2f}s</div>
                 <div class="node-tokens">In: {step.input_tokens or 0} | Out: {step.output_tokens or 0}</div>
+                {badge_html}
             </div>
             """
             if idx < len(product.metrics.steps) - 1:
@@ -109,6 +131,11 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         flow_html += '</div>'
     else:
         flow_html = "<div>No metrics available.</div>"
+        
+    total_seconds = product.metrics.total_time if product.metrics else 0.0
+    minutes = int(total_seconds // 60)
+    seconds = int(total_seconds % 60)
+    time_str = f"{minutes:02d}:{seconds:02d}"
         
     html_content = textwrap.dedent(f"""\
     <!DOCTYPE html>
@@ -146,6 +173,18 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             }}
             .status-pass {{ background-color: var(--accent-green); box-shadow: 0 0 10px rgba(52, 211, 153, 0.3); }}
             .status-review {{ background-color: var(--accent-red); box-shadow: 0 0 10px rgba(248, 113, 113, 0.3); }}
+            .badge {{
+                display: inline-block;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: bold;
+                text-transform: uppercase;
+                color: white;
+                margin-top: 4px;
+            }}
+            .badge-image {{ background-color: var(--accent-green); }}
+            .badge-prompt {{ background-color: var(--accent-blue); }}
             * {{
                 box-sizing: border-box;
                 margin: 0;
@@ -386,7 +425,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         
         <!-- Metrics Flow Section -->
         <div class="card">
-            <div class="section-title">Generation Process Flow</div>
+            <div class="section-title">Generation Process Flow [ {time_str} ]</div>
             {flow_html}
         </div>
         
@@ -399,7 +438,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
                     <div class="details-block">
                         <div class="details-label">Reference Images</div>
                         <div class="image-gallery">
-                            {"".join([f'<img src="{img}" alt="Reference" onclick="openModal(this.src)">' for img in ref_images])}
+                            {"".join([f'<img src="{img}" alt="Reference" data-type="reference" onclick="openModal(this)">' for img in ref_images])}
                         </div>
                         <a href="{orig_url}" class="origin-link" target="_blank">View Origin Product</a>
                     </div>
@@ -488,16 +527,17 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             
             <!-- Images Container -->
             <div style="display: flex; justify-content: center; gap: 30px; max-width: 90%; margin: auto; align-items: center;">
-                <!-- Reference Image -->
-                <div style="text-align: center; flex: 1; max-width: 600px;">
-                    <div style="color: white; margin-bottom: 10px; font-weight: bold; font-size: 16px;">Reference Image</div>
-                    <div style="height: 60vh; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;">
-                        <img id="img_ref" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                <!-- Reference Images (Gallery) -->
+                <div id="ref-container" style="text-align: center; flex: 1; max-width: 600px;">
+                    <div id="ref-title" style="color: white; margin-bottom: 10px; font-weight: bold; font-size: 16px;">Reference Images</div>
+                    <div style="height: 60vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;">
+                        <img id="img_ref" style="max-width: 100%; max-height: 80%; object-fit: contain;">
+                        <div id="ref-gallery" class="image-gallery" style="margin-top: 10px; justify-content: center; display: flex; gap: 5px; overflow-x: auto; width: 100%; padding: 5px;"></div>
                     </div>
                 </div>
                 
                 <!-- Generated Image -->
-                <div style="text-align: center; flex: 1; max-width: 600px;">
+                <div id="gen-container" style="text-align: center; flex: 1; max-width: 600px;">
                     <div style="color: white; margin-bottom: 10px; font-weight: bold; font-size: 16px;">Generated Image</div>
                     <div style="height: 60vh; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;">
                         <img id="img01" style="max-width: 100%; max-height: 100%; object-fit: contain;">
@@ -506,7 +546,7 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
             </div>
             
             <!-- Reasoning Card -->
-            <div style="max-width: 90%; margin: 20px auto; background: var(--bg-card); border-radius: 12px; padding: 25px; box-shadow: var(--card-shadow); border: 1px solid var(--border-color);">
+            <div id="cards-container" style="max-width: 90%; margin: 20px auto; background: var(--bg-card); border-radius: 12px; padding: 25px; box-shadow: var(--card-shadow); border: 1px solid var(--border-color);">
                 <h3 style="color: var(--accent-blue); margin-bottom: 15px; font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Judge's Reasoning</h3>
                 <div id="modal-reasoning" style="color: var(--text-main); text-align: left; font-size: 14px; white-space: pre-wrap; margin-bottom: 20px;"></div>
                 
@@ -516,35 +556,61 @@ def generate_pdp_html(product: DetailedProduct, output_dir: Path):
         </div>
 
         <script>
-            function openModal(src, reasoning, refSrc, promptText) {{
+            function openModal(img) {{
                 document.getElementById('myModal').style.display = "block";
-                document.getElementById('img01').src = src;
-                document.getElementById('img_ref').src = refSrc || 'https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image';
-                document.getElementById('modal-reasoning').innerText = reasoning;
-                document.getElementById('modal-prompt').innerText = promptText || 'No prompt recorded.';
-            }}
-
-            function closeModal() {{
-                document.getElementById('myModal').style.display = "none";
-            }}
-            
-            window.onclick = function(event) {{
-                let modal = document.getElementById('myModal');
-                if (event.target == modal) {{
-                    modal.style.display = "none";
+                
+                let type = img.getAttribute('data-type');
+                
+                if (type === 'reference') {{
+                    // Isolation view for reference image
+                    document.getElementById('img_ref').src = img.src;
+                    document.getElementById('ref-gallery').style.display = "none";
+                    document.getElementById('gen-container').style.display = "none";
+                    document.getElementById('cards-container').style.display = "none";
+                    document.getElementById('ref-title').innerText = "Reference Image";
+                }} else {{
+                    // Comparison view for generated image
+                    document.getElementById('gen-container').style.display = "block";
+                    document.getElementById('cards-container').style.display = "block";
+                    document.getElementById('ref-gallery').style.display = "flex";
+                    document.getElementById('ref-title').innerText = "Reference Images";
+                    
+                    document.getElementById('img01').src = img.src;
+                    
+                    let refImagesStr = img.getAttribute('data-ref-images');
+                    let refImages = [];
+                    try {{
+                        refImages = JSON.parse(refImagesStr) || [];
+                    }} catch(e) {{
+                        console.error("Failed to parse ref images", e);
+                    }}
+                    
+                    let galleryDiv = document.getElementById('ref-gallery');
+                    galleryDiv.innerHTML = '';
+                    
+                    if (refImages.length > 0) {{
+                        document.getElementById('img_ref').src = refImages[0];
+                        refImages.forEach(src => {{
+                            let thumb = document.createElement('img');
+                            thumb.src = src;
+                            thumb.style.width = '40px';
+                            thumb.style.height = '40px';
+                            thumb.style.objectFit = 'cover';
+                            thumb.style.cursor = 'pointer';
+                            thumb.style.border = '1px solid var(--border-color)';
+                            thumb.style.borderRadius = '4px';
+                            thumb.onclick = function() {{
+                                document.getElementById('img_ref').src = src;
+                            }};
+                            galleryDiv.appendChild(thumb);
+                        }});
+                    }} else {{
+                        document.getElementById('img_ref').src = 'https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image';
+                    }}
+                    
+                    document.getElementById('modal-reasoning').innerText = img.getAttribute('data-reasoning');
+                    document.getElementById('modal-prompt').innerText = img.getAttribute('data-prompt') || 'No prompt recorded.';
                 }}
-            }}
-        </script>
-    </body>
-    </html>
-
-        <script>
-            function openModal(src, reasoning, refSrc, promptText) {{
-                document.getElementById('myModal').style.display = "block";
-                document.getElementById('img01').src = src;
-                document.getElementById('img_ref').src = refSrc || 'https://placehold.co/300x300/f3f4f6/a1a1aa?text=No+Reference+Image';
-                document.getElementById('modal-reasoning').innerText = reasoning;
-                document.getElementById('modal-prompt').innerText = promptText || 'No prompt recorded.';
             }}
 
             function closeModal() {{
