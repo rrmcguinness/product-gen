@@ -3,6 +3,27 @@ from google.genai.errors import APIError
 from google.genai import Client, types
 from .model import StepMetrics
 from typing import Any, Tuple
+import threading
+
+rate_limit_lock = threading.Lock()
+call_timestamps = []
+
+def check_rate_limit():
+    while True:
+        with rate_limit_lock:
+            now = time.time()
+            global call_timestamps
+            call_timestamps = [t for t in call_timestamps if now - t < 60]
+            
+            if len(call_timestamps) < 25:
+                call_timestamps.append(now)
+                return
+                
+            sleep_time = 60 - (now - call_timestamps[0])
+            
+        if sleep_time > 0:
+            print(f"    [Rate Limiter] Hit limit (25/min). Sleeping for {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
 
 class LLMError(Exception):
     def __init__(self, original_error: Exception, metrics: StepMetrics):
@@ -29,6 +50,8 @@ def call_gemini(
         try:
             if attempt > 0:
                 print(f"    [Retrying] {step_name} (Attempt {attempt}/{max_retries})...")
+            
+            check_rate_limit()
             
             response = client.models.generate_content(
                 model=model,

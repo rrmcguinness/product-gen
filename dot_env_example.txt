@@ -1,0 +1,45 @@
+THREAD_POOL_SIZE=1
+PRIMARY_MODEL_RETRIES=5
+API_CALL_TIMEOUT=600
+PASS_THRESHOLD=0.98
+
+GOOGLE_CLOUD_PROJECT=""
+GOOGLE_CLOUD_PROJECT_LOCATION='us-central1'
+GEMINI_API_KEY=""
+
+GENERATE_PROMPT_BASE="Task: A high quality product photograph of '{product_name}'. Category: {level_1} > {level_2}."
+GENERATE_MODEL="gemini-3-pro-image-preview"
+
+# gemini-3.1-pro-preview
+
+ENRICH_MODEL_PRIMARY="gemini-3.1-pro-preview"
+ENRICH_MODEL_FALLBACK="gemini-2.5-flash"
+ENRICH_INSTRUCTIONS="You are an Expert Merchandiser for Walmart. Your goal is to produce deep, enriched product detail profiles that conform to the requested schema."
+ENRICH_PROMPT="Given the following basic product information, provide a deep, enriched product detail profile. Include at least 4 levels of category hierarchy, comprehensive sales and supply chain attributes, and suggest dynamic natural environments for photographing the product. Provide the output strictly conforming to the following JSON schema: {schema}\n\nProduct Info: {product_json}"
+ENRICH_TEMP=0.4
+
+DESCRIBE_MODEL_PRIMARY="gemini-3.1-pro-preview"
+DESCRIBE_MODEL_FALLBACK="gemini-2.5-flash"
+DESCRIBE_INSTRUCTIONS="You are an Expert Marketer for Walmart. Your task is to generate highly detailed, comprehensive physical descriptions of products based on images, focusing on details that help in recreating the product visually."
+DESCRIBE_PROMPT="Analyze the provided image(s) of the primary product and generate a highly detailed, comprehensive physical description of the product. You MUST isolate and extract ONLY the details of the product itself, completely ignoring the overall image composition, background, props, or any other non-product elements. If the product is a softline item (e.g., clothing, apparel, fabric, textiles), focus on: material, pattern, color, color combinations, construction details (stitching, cut), and fit. If the product is a hardline item (e.g., electronics, furniture, tools, toys - anything not clothing or fabric), focus on: color, material, dimensions, shape, texture, and key physical features. Additionally, include a detailed description of any typeset, text, or branding visible on the product or packaging, including its placement, font style (e.g., serif, sans-serif, script), color, and layout. If there are people visible in the image (e.g., models wearing clothing or using the product), do NOT describe the person's physical features, appearance, or specific body type. Instead, strictly use phrasing like 'a [male/female] person wearing' or 'a [male/female] person using' to describe the interaction with the product. Furthermore, do not describe the specific background of the reference image. Instead, describe a natural and neutral environment appropriate for the product to be placed in, ensuring it enhances the product without being distracting. When describing colors, follow these best practices: - Start with a neutral lighting base description (e.g., 'balanced daylight') before applying color modifiers. - Combine color with material and lighting (e.g., 'matte olive leather', 'sleek red satin'). - Prioritize color tags by mentioning them early in the description of an item. - Stick to one or two dominant color cues to avoid overloading. - Use effective descriptors for tones (e.g., Warm: auburn, caramel, honey; Cool: emerald, forest green, sapphire; High-End: charcoal, obsidian, cream). - Use a mix of approximately 20% color psychology words (e.g., sophisticated, energetic, calming) and 80% purely descriptive words. - Extract the exact sRGB hex code for each distinct color identified on the primary product and include it in the description (e.g., '#FF5733'). Put extra emphasis on describing the product's dimensions, proportions, and structural details to ensure accurate recreation. This description will be used to recreate the product image from scratch, so be as specific as possible."
+DESCRIBE_TEMP=0.4
+
+
+JUDGE_MODEL="gemini-3.1-pro-preview"
+JUDGE_INSTRUCTIONS="You are an expert product catalog auditor for Walmart. Compare the generated image against the original reference image(s) and description. Score likeness from 0.0 to 1.0. When evaluating likeness, prioritize the physical product and its packaging. Do not be overly critical of the surrounding content or environment. For products with screens (e.g., monitors, TVs), the specific background image or wallpaper on the screen does not need to be an exact match, but any feature text or UI elements described must be accurate. For images containing people, allow for variations in appearance (features, body type) provided the gender matches the description or reference. Additionally, ensure the image meets these productization requirements: 1. No explicit nudity, vulgar language, obscene material, or depiction of alcohol or tobacco usage. 2. Main images must feature items on a seamless white background (255/255/255 RGB). 3. Crop the item as close as possible to the image frame, avoiding excessive background space. 4. No watermarks, names, or logos. 5. No accessories or props that are not included. 6. No claims or promotional language. 7. No languages other than English. 8. The image must be truthful, accurate, and not misleading."
+JUDGE_PROMPT="Evaluate product likeness. Compare the primary product in the generated image with the original image(s). Adhere to the provided description."
+JUDGE_TEMP=0.0
+JUDGE_TOP_P=0.7
+JUDGE_TOP_K=60
+
+SEARCH_MODEL="gemini-3.1-pro-preview"
+SEARCH_INSTRUCTIONS="You are an Expert Manufacturer Search Agent. Your task is to find official high-quality product image URLs, avoiding e-commerce platforms."
+SEARCH_PROMPT="Find official high-quality product image URLs for the product: '{search_term}'. Focus on images provided by the manufacturer or official sources. Prioritize royalty-free images. The images MUST contain the actual physical product, not just a brand logo or text. If manufacturer images are not found, images from walmart.com are acceptable. Return ONLY a JSON list of valid image URLs (strings starting with http or https). Do not include any other text or markdown formatting."
+SEARCH_TEMP=0.2
+
+REWRITE_PROMPT="You are an expert prompt engineer for text-to-image models. Your task is to improve an image generation prompt based on feedback from a quality judge.\\n\\nOriginal Prompt:\\n{original_prompt}\\n\\nJudge's Feedback/Reasoning for Failure:\\n{reasoning}\\n\\nGenerate a new, optimized prompt that incorporates the feedback to fix the issues. Make the instructions specific, actionable, and clear for the image generator. Output ONLY the new prompt text, nothing else."
+
+VERIFY_MODEL="gemini-3.1-pro-preview"
+VERIFY_INSTRUCTIONS="You are an expert product catalog auditor for Walmart. Your task is to determine if an image contains the actual physical product or if it is just a logo, text label, or unrelated content."
+VERIFY_PROMPT="Analyze this image. Does it contain the actual physical product described as '{product_name}'? Or is it just a logo, text label, or unrelated content? Return JSON with 'contains_product' (boolean) and 'reasoning' (string)."
+VERIFY_TEMP=0.0

@@ -1,7 +1,7 @@
 [project]
 name = "product-gen"
 version = "0.1.0"
-description = "Add your description here"
+description = "Enterprise GenAI Product Enrichment and High-Fidelity Image Generation Pipeline"
 readme = "README.md"
 authors = [
     { name = "Ryan McGuinness", email = "rmcguinness@google.com" }
@@ -17,9 +17,47 @@ dependencies = [
     "reportlab>=4.4.10",
 ]
 
+[project.optional-dependencies]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.49",
+    "mkdocstrings[python]>=0.28.0",
+    "pymdown-extensions>=10.14",
+]
+
+[dependency-groups]
+dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.49",
+    "mkdocstrings[python]>=0.28.0",
+    "pymdown-extensions>=10.14",
+]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.49",
+    "mkdocstrings[python]>=0.28.0",
+    "pymdown-extensions>=10.14",
+]
+
 [project.scripts]
 product-gen = "product_gen.process:main"
+product-gen-report = "product_gen.generate_report:main"
+product-gen-gallery = "product_gen.build_gallery:main"
+docs-serve = "product_gen.docs_cli:serve"
+docs-build = "product_gen.docs_cli:build"
+docs-package = "product_gen.docs_packager:main"
+
+
+[tool.uv]
+index-url = "https://pypi.org/simple"
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9"]
 build-backend = "uv_build"
+
+
+

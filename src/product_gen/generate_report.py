@@ -4,10 +4,7 @@ from pathlib import Path
 import sys
 from typing import Dict, Any, List
 
-# Add project root to path
-sys.path.append("/Users/rmcguinness/Projects/customers/walmart/product-gen/src")
-
-from product_gen.report import generate_pdf_report
+from .report import generate_pdf_report
 
 def run_report(output_dir: Path) -> None:
     """
@@ -562,9 +559,9 @@ def run_report(output_dir: Path) -> None:
         f.write(html_content)
     print(f"  -> Generated HTML Report: {report_path}")
 
-if __name__ == "__main__":
+def main() -> None:
     import argparse
-    parser = argparse.ArgumentParser(description="Generate PDF report from output data.")
+    parser = argparse.ArgumentParser(description="Generate PDF and HTML reports from output data.")
     parser.add_argument(
         "--dir", "-d",
         type=str,
@@ -578,3 +575,7 @@ if __name__ == "__main__":
         print(f"Output directory {output_dir} does not exist.")
         sys.exit(1)
     run_report(output_dir)
+
+if __name__ == "__main__":
+    main()
+

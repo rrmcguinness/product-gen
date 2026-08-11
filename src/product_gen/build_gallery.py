@@ -202,5 +202,18 @@ def build_gallery(output_dir: Path | str = "output"):
         
     print(f"Gallery successfully written to {out_file} featuring {len(products)} items.")
 
+def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate product gallery HTML from output directory.")
+    parser.add_argument(
+        "--dir", "-d",
+        type=str,
+        default="output",
+        help="Directory containing product output folders (default: output)"
+    )
+    args = parser.parse_args()
+    build_gallery(args.dir)
+
 if __name__ == "__main__":
-    build_gallery()
+    main()
+

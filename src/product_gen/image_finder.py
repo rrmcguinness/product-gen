@@ -79,6 +79,11 @@ class ImageFinder:
         prompt = prompt_template.format(search_term=search_term)
         
         search_model = os.environ.get("SEARCH_MODEL", "gemini-3.1-flash-lite")
+        temp = float(os.environ.get("SEARCH_TEMP", "0.2"))
+        top_p = os.environ.get("SEARCH_TOP_P")
+        top_k = os.environ.get("SEARCH_TOP_K")
+        top_p = float(top_p) if top_p else None
+        top_k = int(top_k) if top_k else None
         
         try:
             response, metrics = call_gemini(
@@ -87,7 +92,9 @@ class ImageFinder:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     tools=[{"google_search": {}}],
-                    temperature=0.2,
+                    temperature=temp,
+                    top_p=top_p,
+                    top_k=top_k,
                     response_mime_type="application/json",
                     system_instruction=os.environ.get("SEARCH_INSTRUCTIONS", "")
                 ),
@@ -145,6 +152,11 @@ class ImageFinder:
         ]
         
         verify_model = os.environ.get("VERIFY_MODEL", "gemini-3.1-flash-lite")
+        temp = float(os.environ.get("VERIFY_TEMP", "0.0"))
+        top_p = os.environ.get("VERIFY_TOP_P")
+        top_k = os.environ.get("VERIFY_TOP_K")
+        top_p = float(top_p) if top_p else None
+        top_k = int(top_k) if top_k else None
         
         try:
             response, metrics = call_gemini(
@@ -152,7 +164,9 @@ class ImageFinder:
                 model=verify_model,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    temperature=0.0,
+                    temperature=temp,
+                    top_p=top_p,
+                    top_k=top_k,
                     response_mime_type="application/json",
                     system_instruction=instructions
                 ),

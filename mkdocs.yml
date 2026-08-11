@@ -1,0 +1,119 @@
+site_name: Walmart Product Generation Pipeline
+site_description: Enterprise GenAI Product Enrichment, High-Fidelity Studio Image Generation, and Multimodal Likeness Evaluation Engine
+site_author: Ryan McGuinness
+site_url: http://localhost:8000/
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tooltips
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            show_signature_annotations: true
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Architecture:
+      - System Overview: architecture/index.md
+      - Pipeline Architecture: architecture/pipeline.md
+      - Data Models & Schemas: architecture/data-models.md
+  - Workflow:
+      - End-to-End Workflow: workflow/index.md
+      - 1. Ingestion & Normalization: workflow/ingestion.md
+      - 2. GenAI Enrichment: workflow/enrichment.md
+      - 3. Reference Acquisition: workflow/reference-acquisition.md
+      - 4. Studio Image Generation: workflow/image-generation.md
+      - 5. Likeness Judge: workflow/likeness-judging.md
+      - 6. Prompt Self-Refinement: workflow/self-refinement.md
+      - 7. Metrics & Observability: workflow/metrics-and-telemetry.md
+  - Reporting & Dashboards:
+      - Reporting Suite: reporting/index.md
+      - Interactive PDP Reports: reporting/pdp-reports.md
+      - Execution Dashboard: reporting/dashboard.md
+      - Executive PDF Reports: reporting/pdf-reports.md
+      - Product Gallery: reporting/gallery.md
+  - Configuration:
+      - Overview: configuration/index.md
+      - Environment Variables: configuration/environment-variables.md
+      - CLI Reference: configuration/cli-reference.md
+      - Image Constraints: configuration/image-constraints.md
+  - Operations:
+      - Overview: operations/index.md
+      - Installation & Setup: operations/installation.md
+      - Execution Guide: operations/execution.md
+      - Troubleshooting & FAQ: operations/troubleshooting.md
+  - API Reference:
+      - Overview: api/index.md
+      - process: api/process.md
+      - model: api/model.md
+      - product_reader: api/product_reader.md
+      - image_finder: api/image_finder.md
+      - pdp: api/pdp.md
+      - report: api/report.md
+      - generate_report: api/generate_report.md
+      - build_gallery: api/build_gallery.md
+      - utils: api/utils.md
+      - docs_cli: api/docs_cli.md

@@ -15,3 +15,5 @@ output*
 archive
 
 .DS_Store
+site/
+product_gen_docs.*
