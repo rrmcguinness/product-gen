@@ -8,9 +8,9 @@ The Walmart Product Generation Pipeline provides flexible configuration through 
 
 ```mermaid
 graph TD
-    A[CLI Flags\n--threads, --file, --max-records, etc.] -->|Highest Precedence| D[Runtime Execution Config]
-    B[.env Environment File\nTHREAD_POOL_SIZE, PASS_THRESHOLD, etc.] -->|Overrides Defaults| D
-    C[Built-in Python Defaults\nFallback Values in Source Code] -->|Lowest Precedence| D
+    A["CLI Flags<br/>--threads, --file, --max-records, etc."] -->|"Highest Precedence"| D["Runtime Execution Config"]
+    B[".env Environment File<br/>THREAD_POOL_SIZE, PASS_THRESHOLD, etc."] -->|"Overrides Defaults"| D
+    C["Built-in Python Defaults<br/>Fallback Values in Source Code"] -->|"Lowest Precedence"| D
 ```
 
 When an option is specified at multiple levels:

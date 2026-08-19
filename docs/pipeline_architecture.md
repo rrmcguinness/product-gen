@@ -10,17 +10,17 @@ The pipeline is designed to enrich product data, generate high-fidelity product 
 
 ```mermaid
 graph TD
-    A[Data Source: Excel] --> B(Product Reader)
-    B --> C(Process Orchestrator)
-    C --> D[GenAI: Enrich Product]
-    C --> E[Image Finder]
-    E --> F[Reference Images]
-    C --> G[GenAI: Generate Image]
-    C --> H[GenAI: Judge Image]
-    H -->|Score < 0.9| G
-    H -->|Score >= 0.9| I[Save Final Image]
-    C --> J[Report Generator]
-    J --> K[PDF Report]
+    A["Data Source: Excel"] --> B["Product Reader"]
+    B --> C["Process Orchestrator"]
+    C --> D["GenAI: Enrich Product"]
+    C --> E["Image Finder"]
+    E --> F["Reference Images"]
+    C --> G["GenAI: Generate Image"]
+    C --> H["GenAI: Judge Image"]
+    H -->|"Score < 0.9"| G
+    H -->|"Score >= 0.9"| I["Save Final Image"]
+    C --> J["Report Generator"]
+    J --> K["PDF Report"]
 ```
 
 ## Detailed Process Steps
@@ -92,14 +92,14 @@ sequenceDiagram
             Orchestrator->>Storage: Save Generated Image
             Orchestrator->>Gemini: Judge Likeness (gemini-2.5-pro)
             Gemini-->>Orchestrator: Score & Reasoning
-            alt Score >= 0.9
-                note over Orchestrator: Break loop
-            else Score < 0.9
-                note over Orchestrator: Retry
+            alt Score >= 0.90
+                Note over Orchestrator: Break loop
+            else Score < 0.90
+                Note over Orchestrator: Retry
             end
         end
         Orchestrator->>Storage: Save final image and metrics
     end
     Orchestrator->>Storage: Scan results and Generate Report
-    Orchestrator->>User: Play completion sound
+    Orchestrator->>User: Complete Pipeline Execution
 ```

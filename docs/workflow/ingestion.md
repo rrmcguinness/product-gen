@@ -8,13 +8,13 @@ The ingestion layer implemented in [`product_reader.py`](../api/product_reader.m
 
 ```mermaid
 graph TD
-    A[Excel Spreadsheet .xlsx] --> B[pandas.read_excel]
-    B --> C[Column Name Normalization\nLowercase & Snake_case]
-    C --> D[Duplicate Column Merging\nGroupBy First Non-Null]
-    D --> E[NaN Conversion to Python None]
-    E --> F[WPID Deduplication\nKeep First Occurrence]
-    F --> G[Embedded JSON Parsing in product_long_description]
-    G --> H[Pydantic Validation\nProductImageGenerationData]
+    A["Excel Spreadsheet .xlsx"] --> B["pandas.read_excel"]
+    B --> C["Column Name Normalization<br/>Lowercase & snake_case"]
+    C --> D["Duplicate Column Merging<br/>GroupBy First Non-Null"]
+    D --> E["NaN Conversion to Python None"]
+    E --> F["WPID Deduplication<br/>Keep First Occurrence"]
+    F --> G["Embedded JSON Parsing in product_long_description"]
+    G --> H["Pydantic Validation<br/>ProductImageGenerationData"]
 ```
 
 ---

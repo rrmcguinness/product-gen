@@ -12,14 +12,14 @@ stateDiagram-v2
     Ingestion --> Enrichment: ProductImageGenerationData
     Enrichment --> ReferenceAcquisition: DetailedProduct
     ReferenceAcquisition --> ImageGeneration: Verified Reference Images
-    ImageGeneration --> LikenessJudging: Generated 2200x2200 Image
-    LikenessJudging --> PassReview: Score >= 0.90
-    LikenessJudging --> PromptRefinement: Score < 0.90 and Attempts < 3
-    PromptRefinement --> ImageGeneration: Rewritten Prompt
-    LikenessJudging --> MaxRetriesReached: Attempts == 3
-    PassReview --> TelemetryAndReporting: Saved Assets & Metrics
-    MaxRetriesReached --> TelemetryAndReporting: Best Effort & Flags
-    TelemetryAndReporting --> [*]: PDP HTML & Executive Report
+    ImageGeneration --> LikenessJudging: Generated Studio Image
+    LikenessJudging --> PassReview: Likeness Score at or above 0.90
+    LikenessJudging --> PromptRefinement: Likeness Score under 0.90
+    PromptRefinement --> ImageGeneration: Rewritten Optimized Prompt
+    LikenessJudging --> MaxRetriesReached: Maximum Retries Reached
+    PassReview --> TelemetryAndReporting: Saved Assets and Telemetry
+    MaxRetriesReached --> TelemetryAndReporting: Best Effort Asset and Flags
+    TelemetryAndReporting --> [*]: PDP HTML and Executive Report
 ```
 
 ---

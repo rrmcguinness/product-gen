@@ -8,10 +8,10 @@ The Walmart Product Generation Pipeline provides an integrated analytics and vis
 
 ```mermaid
 graph TD
-    A[Output Directory: output/run_id] --> B[1. Per-SKU PDP Report\noutput/run_id/WPID/index.html]
-    A --> C[2. Pipeline Execution Dashboard\noutput/run_id/index.html]
-    A --> D[3. Executive PDF Report\noutput/run_id/pipeline_report.pdf]
-    A --> E[4. Enterprise GenAI Gallery\noutput/run_id/gallery.html]
+    A["Output Directory: output/run_id"] --> B["1. Per-SKU PDP Report<br/>output/run_id/WPID/index.html"]
+    A --> C["2. Pipeline Execution Dashboard<br/>output/run_id/index.html"]
+    A --> D["3. Executive PDF Report<br/>output/run_id/pipeline_report.pdf"]
+    A --> E["4. Enterprise GenAI Gallery<br/>output/run_id/gallery.html"]
 ```
 
 ---

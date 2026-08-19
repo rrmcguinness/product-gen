@@ -8,32 +8,32 @@ The **Walmart Product Generation Pipeline** implements an autonomous, multi-stag
 
 ```mermaid
 graph TD
-    subgraph Data Layer
-        A[Excel Source File\n.xlsx] --> B[Product Reader\nproduct_reader.py]
-        B --> C[Normalized Product Records\nProductImageGenerationData]
+    subgraph Data_Layer ["Data Layer"]
+        A["Excel Source File<br/>.xlsx"] --> B["Product Reader<br/>product_reader.py"]
+        B --> C["Normalized Product Records<br/>ProductImageGenerationData"]
     end
 
-    subgraph Execution & Orchestration
-        C --> D[Process Orchestrator\nprocess.py]
-        D -->|Concurrent ThreadPool| E[Single Product Worker]
+    subgraph Execution_Orchestration ["Execution & Orchestration"]
+        C --> D["Process Orchestrator<br/>process.py"]
+        D -->|"Concurrent ThreadPool"| E["Single Product Worker"]
     end
 
-    subgraph GenAI Processing Pipeline
-        E --> F[1. GenAI Enrichment\ngemini-3.1-pro-preview]
-        F --> G[2. Reference Acquisition\nImageFinder + Gemini Grounding]
-        G --> H[3. Multimodal Verification\ngemini-3.1-flash-lite]
-        H --> I[4. Constrained Image Generation\ngemini-3-pro-image-preview]
-        I --> J[5. Likeness Judge\ngemini-2.5-pro]
-        J -->|Score < 0.90\nAttempt < 3| K[6. Prompt Self-Refinement\ngemini-3.1-pro-preview]
+    subgraph GenAI_Pipeline ["GenAI Processing Pipeline"]
+        E --> F["1. GenAI Enrichment<br/>gemini-3.1-pro-preview"]
+        F --> G["2. Reference Acquisition<br/>ImageFinder + Gemini Grounding"]
+        G --> H["3. Multimodal Verification<br/>gemini-3.1-flash-lite"]
+        H --> I["4. Constrained Image Generation<br/>gemini-3-pro-image-preview"]
+        I --> J["5. Likeness Judge<br/>gemini-2.5-pro"]
+        J -->|"Score < 0.90<br/>Attempt < 3"| K["6. Prompt Self-Refinement<br/>gemini-3.1-pro-preview"]
         K --> I
-        J -->|Score >= 0.90 or\nMax Retries| L[7. Persist Artifacts\nproduct_detail.json & Images]
+        J -->|"Score >= 0.90 or<br/>Max Retries"| L["7. Persist Artifacts<br/>product_detail.json & Images"]
     end
 
-    subgraph Reporting & Visualization
-        L --> M[Per-SKU HTML PDP\npdp.py]
-        L --> N[Summary Dashboard\ngenerate_report.py]
-        L --> O[Executive PDF Report\nreport.py]
-        L --> P[Product Gallery\nbuild_gallery.py]
+    subgraph Reporting_Visualization ["Reporting & Visualization"]
+        L --> M["Per-SKU HTML PDP<br/>pdp.py"]
+        L --> N["Summary Dashboard<br/>generate_report.py"]
+        L --> O["Executive PDF Report<br/>report.py"]
+        L --> P["Product Gallery<br/>build_gallery.py"]
     end
 ```
 

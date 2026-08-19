@@ -52,38 +52,42 @@ def create_single_file_html(site_dir: Path, output_file: Path) -> Path:
 
     # Inline all local stylesheets
     def replace_css(match):
+        tag = match.group(0)
+        if 'rel="stylesheet"' not in tag and "rel='stylesheet'" not in tag:
+            return tag
         href = match.group(1)
         if href.startswith(("http://", "https://", "//")):
-            return match.group(0)
+            return tag
         clean_href = href.split("?")[0].split("#")[0].lstrip("./")
         css_path = site_dir / clean_href
         if css_path.exists():
             with open(css_path, "r", encoding="utf-8") as cf:
                 css_data = cf.read()
             return f"<style>\n{css_data}\n</style>"
-        return match.group(0)
+        return tag
 
     html = re.sub(
-        r'<link[^>]+rel=[\"\']stylesheet[\"\'][^>]+href=[\"\']([^\"\']+)[\"\'][^>]*>',
+        r'<link\b[^>]*?\bhref=[\"\']([^\"\']+)[\"\'][^>]*?>',
         replace_css,
         html
     )
 
     # Inline all local javascript files
     def replace_js(match):
+        tag = match.group(0)
         src = match.group(1)
         if src.startswith(("http://", "https://", "//")):
-            return match.group(0)
+            return tag
         clean_src = src.split("?")[0].split("#")[0].lstrip("./")
         js_path = site_dir / clean_src
         if js_path.exists():
             with open(js_path, "r", encoding="utf-8") as jf:
                 js_data = jf.read()
             return f"<script>\n{js_data}\n</script>"
-        return match.group(0)
+        return tag
 
     html = re.sub(
-        r'<script[^>]+src=[\"\']([^\"\']+)[\"\'][^>]*>\s*</script>',
+        r'<script\b[^>]*?\bsrc=[\"\']([^\"\']+)[\"\'][^>]*?>\s*</script>',
         replace_js,
         html
     )
@@ -141,6 +145,10 @@ function navigateDocTo(key, hash) {{
 
         if (page.title) {{
             document.title = page.title;
+        }}
+
+        if (typeof window.__renderMermaid === 'function') {{
+            window.__renderMermaid(articleContainer);
         }}
 
         document.querySelectorAll('.md-nav__link').forEach(link => {{
@@ -212,7 +220,11 @@ document.addEventListener('DOMContentLoaded', () => {{
 }});
 </script>
 """
-    html = html.replace("</body>", router_script + "\n</body>")
+    last_body_idx = html.rfind("</body>")
+    if last_body_idx != -1:
+        html = html[:last_body_idx] + router_script + "\n</body>" + html[last_body_idx + 7:]
+    else:
+        html += router_script + "\n"
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html)

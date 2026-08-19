@@ -14,17 +14,17 @@ classDiagram
         +int upc
         +str product_name
         +str main_image_url
-        +Union[str, ProductLongDescriptionDetail] product_long_description
+        +Union~str, ProductLongDescriptionDetail~ product_long_description
     }
 
     class DetailedProduct {
         +str product_name
         +CategoryHierarchy category
         +ProductAttributes attributes
-        +List[str] suggested_natural_environments
+        +List~str~ suggested_natural_environments
         +str detailed_description
         +str image_based_description
-        +List[ImageReview] image_reviews
+        +List~ImageReview~ image_reviews
         +PipelineMetrics metrics
     }
 
@@ -33,19 +33,19 @@ classDiagram
         +str level_2
         +str level_3
         +str level_4
-        +Optional[str] level_5
+        +Optional~str~ level_5
     }
 
     class ProductAttributes {
-        +Optional[str] color
-        +Optional[str] material
-        +Optional[str] height
-        +Optional[str] width
-        +Optional[str] depth
-        +Optional[str] weight
-        +Optional[str] brand
-        +Optional[str] target_audience
-        +List[str] key_features
+        +Optional~str~ color
+        +Optional~str~ material
+        +Optional~str~ height
+        +Optional~str~ width
+        +Optional~str~ depth
+        +Optional~str~ weight
+        +Optional~str~ brand
+        +Optional~str~ target_audience
+        +List~str~ key_features
     }
 
     class ImageReview {
@@ -53,8 +53,8 @@ classDiagram
         +float score
         +str reasoning
         +int retry_count
-        +Optional[int] image_size_bytes
-        +Optional[str] prompt
+        +Optional~int~ image_size_bytes
+        +Optional~str~ prompt
     }
 
     class PipelineMetrics {
@@ -63,7 +63,7 @@ classDiagram
         +float average_tokens_per_step
         +int total_retries
         +dict http_errors
-        +List[StepMetrics] steps
+        +List~StepMetrics~ steps
     }
 
     class StepMetrics {

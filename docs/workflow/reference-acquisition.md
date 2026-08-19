@@ -8,17 +8,17 @@ To establish an uncompromised ground truth for downstream quality evaluation, [`
 
 ```mermaid
 graph TD
-    A[Start: Discover Reference Images] --> B[Tier 1: Grounded Google Search\nGemini + Google Search Tool]
-    B -->|Found URLs| E[Download Candidate Assets]
-    B -->|No URLs| C[Tier 2: Extract from Payload JSON\nmain_image_url & product_additional_urls]
-    C -->|Found URLs| E
-    C -->|No URLs| D[Tier 3: Broad Fallback Web Search]
-    D -->|Found URLs| E
-    D -->|No URLs| F[No References Available\nFlag for Manual Review]
+    A["Start: Discover Reference Images"] --> B["Tier 1: Grounded Google Search<br/>Gemini + Google Search Tool"]
+    B -->|"Found URLs"| E["Download Candidate Assets"]
+    B -->|"No URLs"| C["Tier 2: Extract from Payload JSON<br/>main_image_url & product_additional_urls"]
+    C -->|"Found URLs"| E
+    C -->|"No URLs"| D["Tier 3: Broad Fallback Web Search"]
+    D -->|"Found URLs"| E
+    D -->|"No URLs"| F["No References Available<br/>Flag for Manual Review"]
     
-    E --> G[Multimodal Verification\ngemini-3.1-flash-lite]
-    G -->|contains_product: True| H[Persist to output/WPID/reference_images/]
-    G -->|contains_product: False| I[Delete Asset & Log Warning]
+    E --> G["Multimodal Verification<br/>gemini-3.1-flash-lite"]
+    G -->|"contains_product: True"| H["Persist to output/WPID/reference_images/"]
+    G -->|"contains_product: False"| I["Delete Asset & Log Warning"]
 ```
 
 ---

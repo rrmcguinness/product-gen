@@ -9,14 +9,22 @@ Utilizing Google Cloud Vertex AI and Gemini generative models (`gemini-3.1-pro-p
 ## Key Capabilities
 
 ```mermaid
-graph LR
-    A[Excel Data Ingestion] --> B[Gemini Deep Enrichment]
-    B --> C[Reference Image Discovery & Verification]
-    C --> D[Constrained Studio Image Generation]
-    D --> E[Multimodal Likeness Judging]
-    E -->|Critique & Score < 0.90| F[Automated Prompt Refinement Loop]
-    F --> D
-    E -->|Pass Score >= 0.90| G[Interactive PDP & Executive Reporting]
+graph TD
+    subgraph Stage_Ingestion ["1. Ingestion & Ground Truth"]
+        A["Excel Catalog Data Ingestion"] --> B["Gemini Deep Enrichment"]
+        B --> C["Reference Image Discovery & Verification"]
+    end
+
+    subgraph Stage_Generation ["2. Synthesis & Quality Assurance"]
+        C --> D["Constrained Studio Image Generation<br/>(gemini-3-pro-image-preview)"]
+        D --> E["Multimodal Likeness Judging<br/>(gemini-2.5-pro)"]
+        E -->|"Critique & Score < 0.90"| F["Automated Prompt Refinement Loop<br/>(gemini-3.1-pro-preview)"]
+        F --> D
+    end
+
+    subgraph Stage_Publishing ["3. Reporting & Analytics"]
+        E -->|"Pass Score >= 0.90"| G["Interactive PDP & Executive Reporting"]
+    end
 ```
 
 - **Structured Data Enrichment**: Extracts 4+ level category hierarchies, Schema.org attributes (brand, color, material, dimensions), key features, and dynamic photographic staging environments.

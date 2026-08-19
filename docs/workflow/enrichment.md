@@ -10,21 +10,21 @@ The enrichment stage transforms sparse catalog metadata into comprehensive, Sche
 sequenceDiagram
     participant Worker as process.py
     participant RateLimiter as Rate Limiter
-    participant GeminiPrimary as Gemini 3.1 Pro (Primary)
-    participant GeminiFallback as Gemini 3.0 Flash (Fallback)
+    participant GeminiPrimary as Gemini 3.1 Pro Primary
+    participant GeminiFallback as Gemini 3.0 Flash Fallback
     participant Disk as Local Storage
 
     Worker->>RateLimiter: check_rate_limit()
-    Worker->>GeminiPrimary: generate_content(prompt, response_schema=ProductEnrichment)
+    Worker->>GeminiPrimary: generate_content (ProductEnrichment schema)
     
     alt Primary Success
-        GeminiPrimary-->>Worker: ProductEnrichment JSON + Token Usage
-    else Primary Failure (Quota/Error)
-        Worker->>GeminiFallback: generate_content(prompt, response_schema=ProductEnrichment)
-        GeminiFallback-->>Worker: ProductEnrichment JSON + Token Usage
+        GeminiPrimary-->>Worker: ProductEnrichment JSON and Metrics
+    else Primary Failure (Fallback)
+        Worker->>GeminiFallback: generate_content (ProductEnrichment schema)
+        GeminiFallback-->>Worker: ProductEnrichment JSON and Metrics
     end
 
-    Worker->>Worker: Validate Pydantic schema & merge properties
+    Worker->>Worker: Validate Pydantic schema and merge properties
     Worker->>Disk: Write output/WPID/product_detail.json
 ```
 

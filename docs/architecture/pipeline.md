@@ -39,9 +39,9 @@ sequenceDiagram
             Worker->>Gemini: judge_product_likeness()
             Gemini-->>Worker: ProductLikenessReview (score, reasoning)
             
-            alt Score >= PASS_THRESHOLD (0.90)
-                note over Worker: Likeness Test Passed
-            else Score < PASS_THRESHOLD and Retries Remaining
+            alt Likeness Pass (Score >= 0.90)
+                Note over Worker: Likeness Test Passed
+            else Likeness Retry (Score < 0.90)
                 Worker->>Gemini: rewrite_prompt_with_feedback(reasoning)
                 Gemini-->>Worker: Rewritten Prompt
             end
@@ -87,12 +87,12 @@ To prevent HTTP `429 Too Many Requests` when scaling concurrent workers, the pip
 ```mermaid
 stateDiagram-v2
     [*] --> CheckWindow: check_rate_limit()
-    CheckWindow --> CleanExpired: Remove timestamps > 60s old
-    CleanExpired --> InspectCount: Count calls in window
-    InspectCount --> AllowCall: Count < 25
+    CheckWindow --> CleanExpired: Purge expired timestamps older than 60s
+    CleanExpired --> InspectCount: Count active requests in window
+    InspectCount --> AllowCall: Window count under limit
     AllowCall --> [*]: Append timestamp & proceed
-    InspectCount --> Sleep: Count >= 25
-    Sleep --> CheckWindow: Sleep (60 - oldest_timestamp)
+    InspectCount --> Sleep: Window count at capacity
+    Sleep --> CheckWindow: Wait for slot expiration
 ```
 
 ```python

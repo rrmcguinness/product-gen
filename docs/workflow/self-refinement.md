@@ -8,13 +8,13 @@ When a generated image fails likeness verification (score < `PASS_THRESHOLD`), t
 
 ```mermaid
 graph TD
-    A[Initial Generation Prompt] --> B[Generate Image Attempt N]
-    B --> C[Judge Likeness Evaluation]
-    C -->|Score < 0.90| D[Extract Judge's Detailed Reasoning & Critique]
-    D --> E[Gemini 3.1 Pro Prompt Optimizer]
-    E --> F[Generate New Actionable Prompt with Specific Fixes]
-    F -->|Increment Attempt Counter N+1| B
-    C -->|Score >= 0.90| G[Loop Terminated: Passed Quality Gate]
+    A["Initial Generation Prompt"] --> B["Generate Image Attempt N"]
+    B --> C["Judge Likeness Evaluation"]
+    C -->|"Score < 0.90"| D["Extract Judge's Detailed Reasoning & Critique"]
+    D --> E["Gemini 3.1 Pro Prompt Optimizer"]
+    E --> F["Generate New Actionable Prompt with Specific Fixes"]
+    F -->|"Increment Attempt Counter N+1"| B
+    C -->|"Score >= 0.90"| G["Loop Terminated: Passed Quality Gate"]
 ```
 
 ---

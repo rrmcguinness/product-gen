@@ -8,16 +8,19 @@ The pipeline captures complete operational telemetry across all model calls, tok
 
 ```mermaid
 graph TD
-    A[Gemini API Response] --> B[Extract usage_metadata]
-    B --> C[Record prompt_token_count as input_tokens]
-    B --> D[Record candidates_token_count as output_tokens]
-    A --> E[Measure Wall-Clock Latency start_time to end_time]
-    A --> F[Catch API Errors & Map Status Codes]
+    A["Gemini API Response"] --> B["Extract usage_metadata"]
+    B --> C["Record prompt_token_count as input_tokens"]
+    B --> D["Record candidates_token_count as output_tokens"]
+    A --> E["Measure Wall-Clock Latency start_time to end_time"]
+    A --> F["Catch API Errors & Map Status Codes"]
     
-    C & D & E & F --> G[Instantiate StepMetrics]
-    G --> H[Append to PipelineMetrics.steps]
-    H --> I[Serialize into product_detail.json]
-    I --> J[Aggregation in generate_report.py]
+    C --> G["Instantiate StepMetrics"]
+    D --> G
+    E --> G
+    F --> G
+    G --> H["Append to PipelineMetrics.steps"]
+    H --> I["Serialize into product_detail.json"]
+    I --> J["Aggregation in generate_report.py"]
 ```
 
 ---

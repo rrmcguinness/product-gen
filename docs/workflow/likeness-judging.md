@@ -8,14 +8,14 @@ The **Judge** multimodal quality assurance mechanism evaluates generated images 
 
 ```mermaid
 graph TD
-    A[Original Reference Images\nref_1.jpg, ref_2.jpg] --> D[The Judge Model\ngemini-2.5-pro]
-    B[Newly Generated Image\nimage_1_attempt_0.jpeg] --> D
-    C[Grounding Product Description] --> D
+    A["Original Reference Images<br/>ref_1.jpg, ref_2.jpg"] --> D["The Judge Model<br/>gemini-2.5-pro"]
+    B["Newly Generated Image<br/>image_1_attempt_0.jpeg"] --> D
+    C["Grounding Product Description"] --> D
     
-    D --> E[Pydantic Validation\nProductLikenessReview]
-    E --> F{Likeness Score >= 0.90?}
-    F -->|Yes: Pass| G[Image Approved\nSave Final Asset]
-    F -->|No: Fail| H[Trigger Stage 6:\nPrompt Self-Refinement]
+    D --> E["Pydantic Validation<br/>ProductLikenessReview"]
+    E --> F{"Likeness Score >= 0.90?"}
+    F -->|"Yes: Pass"| G["Image Approved<br/>Save Final Asset"]
+    F -->|"No: Fail"| H["Trigger Stage 6:<br/>Prompt Self-Refinement"]
 ```
 
 ---
